@@ -1,0 +1,16 @@
+## Build output
+bin/
+obj/
+artifacts/
+TestResults/
+*.user
+*.suo
+.vs/
+.idea/
+
+## Test attachments and traces the suite writes
+*.prototrace
+
+## Local overrides
+appsettings.Development.json
+.env
