@@ -9,5 +9,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/OpenCsms.Domain.Tests/OpenCsms.Domain.Tests.csproj" />
+    <Project Path="tests/OpenCsms.Suite/OpenCsms.Suite.csproj" />
   </Folder>
 </Solution>

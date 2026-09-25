@@ -6,26 +6,23 @@ using OpenCsms.Data;
 using OpenCsms.Domain;
 using OpenCsms.Messaging;
 
-public static class Program
+public sealed class Program
 {
     public static async Task Main(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
 
-        builder.Services.AddCsmsData(builder.Configuration);
+        builder.Services.AddCsmsData();
         builder.Services.AddProblemDetails();
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen();
-        builder.Services.AddRabbitMqEventPublisher(builder.Configuration);
+        builder.Services.AddRabbitMqEventPublisher();
 
         var app = builder.Build();
 
         // The suite starts PostgreSQL before the application, so migrating at boot is safe in every
         // mode; the worker migrates too, and the migration lock makes the race harmless.
-        await using (var scope = app.Services.CreateAsyncScope())
-        {
-            await scope.ServiceProvider.GetRequiredService<CsmsDbContext>().Database.MigrateAsync();
-        }
+        app.Services.MigrateCsmsData();
 
         app.UseExceptionHandler();
         app.UseSwagger();

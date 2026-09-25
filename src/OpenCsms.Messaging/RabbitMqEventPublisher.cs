@@ -1,6 +1,7 @@
 namespace OpenCsms.Messaging;
 
 using System.Text.Json;
+using Microsoft.Extensions.Configuration;
 using OpenCsms.Contracts;
 using RabbitMQ.Client;
 
@@ -12,10 +13,11 @@ public interface IEventPublisher
 
 /// <summary>
 /// A lazily connected RabbitMQ publisher: a service starts and answers health checks even when the
-/// broker is not reachable yet, and the first publish pays the connection. The connection string comes
-/// from the suite's run settings in-process and from the environment in a deployment.
+/// broker is not reachable yet, and the first publish pays the connection. The connection string is
+/// resolved from configuration on first use, so the run's container settings - which arrive after the
+/// publisher is registered - are seen; a deployment configures the same key.
 /// </summary>
-public sealed class RabbitMqEventPublisher(string? connectionString) : IEventPublisher, IAsyncDisposable
+public sealed class RabbitMqEventPublisher(IConfiguration configuration) : IEventPublisher, IAsyncDisposable
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -49,6 +51,8 @@ public sealed class RabbitMqEventPublisher(string? connectionString) : IEventPub
             return _channel;
         }
 
+        var connectionString = configuration["Messaging:RabbitMq:ConnectionString"]
+            ?? configuration["ConnectionStrings:RabbitMq"];
         if (string.IsNullOrWhiteSpace(connectionString))
         {
             throw new InvalidOperationException(

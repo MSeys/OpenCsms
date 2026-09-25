@@ -18,11 +18,14 @@ using RabbitMQ.Client.Events;
 /// Consumes <c>session.ended</c> and stores an invoice. Retries run in-process (republish with an
 /// attempts header, then acknowledge), and a message that still fails is dead-lettered through the
 /// queue's <c>x-dead-letter-exchange</c> - the worker never spins on a poisonous message. The unique
-/// session index on the invoice is what makes a redelivery harmless.
+/// session index makes storing idempotent; publishing <c>invoice.issued</c> is mandatory on every
+/// delivery, including a redelivery, and a failed publish fails the handler so the retry path sees it.
+/// The invoice is stamped with the run's clock, not the machine's.
 /// </summary>
 public sealed class SessionEndedConsumer(
     IServiceScopeFactory scopeFactory,
     IConfiguration configuration,
+    TimeProvider timeProvider,
     ILogger<SessionEndedConsumer> logger) : BackgroundService
 {
     private const int MaxAttempts = 3;
@@ -103,23 +106,33 @@ public sealed class SessionEndedConsumer(
             ?? throw new InvalidOperationException("The session.ended payload is empty.");
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<CsmsDbContext>();
-        if (await db.Invoices.AnyAsync(invoice => invoice.SessionId == message.SessionId, cancellationToken))
+        var invoice = await db.Invoices.FirstOrDefaultAsync(
+            candidate => candidate.SessionId == message.SessionId,
+            cancellationToken);
+        if (invoice is null)
         {
-            logger.LogInformation("Session '{SessionId}' already has an invoice; acknowledging.", message.SessionId);
-            return;
+            var session = await db.Sessions.FirstOrDefaultAsync(candidate => candidate.Id == message.SessionId, cancellationToken)
+                ?? throw new InvalidOperationException($"Session '{message.SessionId}' is not in the store.");
+            var station = await db.Stations.FirstOrDefaultAsync(candidate => candidate.Id == session.StationId, cancellationToken)
+                ?? throw new InvalidOperationException($"Station '{session.StationId}' is not in the store.");
+            var tariff = await db.Tariffs.FirstOrDefaultAsync(candidate => candidate.Id == station.TariffId, cancellationToken)
+                ?? throw new InvalidOperationException($"Tariff '{station.TariffId}' is not in the store.");
+
+            invoice = InvoiceCalculator.Calculate(session, tariff, timeProvider.GetUtcNow());
+            db.Invoices.Add(invoice);
+            await db.SaveChangesAsync(cancellationToken);
+            logger.LogInformation("Billed session '{SessionId}' as invoice '{InvoiceId}'.", session.Id, invoice.Id);
+        }
+        else
+        {
+            logger.LogInformation(
+                "Session '{SessionId}' already has invoice '{InvoiceId}'; republishing.",
+                message.SessionId,
+                invoice.Id);
         }
 
-        var session = await db.Sessions.FirstOrDefaultAsync(candidate => candidate.Id == message.SessionId, cancellationToken)
-            ?? throw new InvalidOperationException($"Session '{message.SessionId}' is not in the store.");
-        var station = await db.Stations.FirstOrDefaultAsync(candidate => candidate.Id == session.StationId, cancellationToken)
-            ?? throw new InvalidOperationException($"Station '{session.StationId}' is not in the store.");
-        var tariff = await db.Tariffs.FirstOrDefaultAsync(candidate => candidate.Id == station.TariffId, cancellationToken)
-            ?? throw new InvalidOperationException($"Tariff '{station.TariffId}' is not in the store.");
-
-        var invoice = InvoiceCalculator.Calculate(session, tariff, DateTimeOffset.UtcNow);
-        db.Invoices.Add(invoice);
-        await db.SaveChangesAsync(cancellationToken);
-
+        // Always publish: the event is the contract, and an exception here must reach the retry path
+        // rather than being swallowed, so a redelivery republishes the same invoice.
         var publisher = scope.ServiceProvider.GetRequiredService<IEventPublisher>();
         await publisher.PublishAsync(
             CsmsEvents.InvoiceIssuedRoutingKey,
@@ -131,7 +144,6 @@ public sealed class SessionEndedConsumer(
                 invoice.Currency,
                 invoice.IssuedAtUtc),
             cancellationToken);
-        logger.LogInformation("Billed session '{SessionId}' as invoice '{InvoiceId}'.", session.Id, invoice.Id);
     }
 
     private async Task RepublishAsync(BasicDeliverEventArgs args, int attempts, CancellationToken cancellationToken)

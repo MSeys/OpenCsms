@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="NUnit" Version="4.6.1" />
+    <PackageReference Include="NUnit.Analyzers" Version="4.3.0" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+    <PackageReference Include="ProtoTest.AspNetCore" Version="1.1.0-alpha.1" />
+    <PackageReference Include="ProtoTest.Hosting" Version="1.1.0-alpha.1" />
+    <PackageReference Include="ProtoTest.Messaging.RabbitMq" Version="1.1.0-alpha.1" />
+    <PackageReference Include="ProtoTest.Messaging.RabbitMq.Testcontainers" Version="1.1.0-alpha.1" />
+    <PackageReference Include="ProtoTest.NUnit" Version="1.1.0-alpha.1" />
+    <PackageReference Include="ProtoTest.Reporting" Version="1.1.0-alpha.1" />
+    <PackageReference Include="ProtoTest.Rest" Version="1.1.0-alpha.1" />
+    <PackageReference Include="ProtoTest.Sql.Testcontainers" Version="1.1.0-alpha.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="NUnit.Framework" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OpenCsms.Api\OpenCsms.Api.csproj" />
+    <ProjectReference Include="..\..\src\OpenCsms.Billing.Worker\OpenCsms.Billing.Worker.csproj" />
+    <ProjectReference Include="..\..\src\OpenCsms.Data\OpenCsms.Data.csproj" />
+    <ProjectReference Include="..\..\src\OpenCsms.Contracts\OpenCsms.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\OpenCsms.Messaging\OpenCsms.Messaging.csproj" />
+  </ItemGroup>
+
+</Project>
