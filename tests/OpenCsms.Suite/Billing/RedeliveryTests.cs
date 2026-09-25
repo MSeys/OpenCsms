@@ -9,6 +9,7 @@ using ProtoTest.Core;
 using ProtoTest.Messaging;
 using ProtoTest.NUnit;
 using ProtoTest.Rest;
+using BillingWorker = OpenCsms.Billing.Worker.Program;
 
 /// <summary>
 /// R1a-01: a redelivered <c>session.ended</c> must republish <c>invoice.issued</c> for the same
@@ -21,13 +22,10 @@ using ProtoTest.Rest;
 [RequiresCapability(
     ProtoCapabilityKinds.Broker,
     Reason = "The redelivery is published and awaited on the product exchange; configure the broker.")]
-[RequiresCapability(
-    ProtoCapabilityKinds.Worker,
-    Reason = "Only the billing worker republishes invoice.issued; the run must compose AddWorkerHost<BillingWorker>.")]
+[RequiresWorker<BillingWorker>]
 public sealed class RedeliveryTests
 {
     private static readonly TimeSpan InvoiceTimeout = TimeSpan.FromSeconds(30);
-    private static readonly JsonSerializerOptions InvoiceJson = new(JsonSerializerDefaults.Web);
 
     [ProtoTest]
     public async Task ARedeliveredSessionEndedRepublishesTheSameInvoice()
@@ -95,7 +93,7 @@ public sealed class RedeliveryTests
             CsmsEvents.Exchange,
             candidate => IsInvoiceIssuedFor(candidate, sessionId),
             InvoiceTimeout);
-        return JsonSerializer.Deserialize<InvoiceIssued>(message.Payload!, InvoiceJson)!;
+        return message.ReadRequired<InvoiceIssued>();
     }
 
     private static async Task<InvoiceResponse> ReadInvoiceAsync(Guid sessionId)
@@ -127,7 +125,7 @@ public sealed class RedeliveryTests
 
         try
         {
-            var issued = JsonSerializer.Deserialize<InvoiceIssued>(message.Payload, InvoiceJson);
+            var issued = message.ReadAsJson<InvoiceIssued>();
             return issued is { } invoice && invoice.SessionId == sessionId && invoice.InvoiceId != Guid.Empty;
         }
         catch (JsonException)

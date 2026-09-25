@@ -42,8 +42,8 @@ Every run writes its evidence under `TestResults/OpenCsms/` beside the built tes
   publishes (`src/OpenCsms.Api/Program.cs`), so a publish failure leaves the session ended with no
   event: the client gets a 500, a retry answers 409, and the invoice is never produced. Accepted for
   M1; a transactional outbox (or a retry) is scheduled with M4's fault-injection work (R1a-02).
-- **Every test connects to the broker at setup.** The run-wide `ProtoTest:Messaging:Destinations:0`
-  pre-bind in `tests/OpenCsms.Suite/Setup.cs` makes the tap prepare its destination during test setup,
-  including for the REST-only contract tests; while ProtoTest's address-precedence fix (audit ADDR-1)
-  is open, a broker-less run fails setup rather than skipping. Revisit the pre-bind after ADDR-1
-  (R1a-13).
+- **Every test connects to the broker at setup.** The run-wide `Tap(CsmsEvents.Exchange)` pre-bind in
+  `tests/OpenCsms.Suite/Setup.cs` makes the tap prepare its destination during test setup,
+  including for the REST-only contract tests; a broker-less run therefore fails setup there rather
+  than skipping. The broker capability gates the tests that need it; the pre-bind is suite-wide by
+  design (R1a-13).

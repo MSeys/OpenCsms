@@ -9,6 +9,7 @@ using ProtoTest.Core;
 using ProtoTest.Messaging;
 using ProtoTest.NUnit;
 using ProtoTest.Rest;
+using BillingWorker = OpenCsms.Billing.Worker.Program;
 
 /// <summary>
 /// The M1 journey: the operator provisioned by <see cref="CsmsOperatorAttribute"/> charges a session,
@@ -21,14 +22,10 @@ using ProtoTest.Rest;
 [RequiresCapability(
     ProtoCapabilityKinds.Broker,
     Reason = "The journey awaits invoice.issued on the broker; configure ProtoTest:Messaging:RabbitMq:ConnectionString.")]
-[RequiresCapability(
-    ProtoCapabilityKinds.Worker,
-    Reason = "The invoice is produced by the billing worker; the run must compose AddWorkerHost<BillingWorker>.")]
+[RequiresWorker<BillingWorker>]
 public sealed class ChargingSessionsBecomeInvoices
 {
     private static readonly TimeSpan InvoiceTimeout = TimeSpan.FromSeconds(30);
-
-    private static readonly JsonSerializerOptions InvoiceJson = new(JsonSerializerDefaults.Web);
 
     [ProtoTest]
     public async Task AChargingSessionBecomesAnInvoice()
@@ -49,7 +46,7 @@ public sealed class ChargingSessionsBecomeInvoices
         {
             ended
                 .Should.HaveHttpStatus(HttpStatusCode.OK)
-                .ShouldMatchShape(new { id = started.Id, isOpen = false });
+                .Should.MatchShape(new { id = started.Id, isOpen = false });
         }
 
         // Assert: the worker published invoice.issued for this session. The tap sees every message on
@@ -58,14 +55,14 @@ public sealed class ChargingSessionsBecomeInvoices
             CsmsEvents.Exchange,
             candidate => IsInvoiceIssuedFor(candidate, started.Id),
             InvoiceTimeout);
-        message.ShouldMatchShape(new
+        message.Should.MatchShape(new
         {
             sessionId = started.Id,
             tenantId = op.TenantId,
             total = 10.30m,
             currency = "EUR"
         });
-        var issued = JsonSerializer.Deserialize<InvoiceIssued>(message.Payload!, InvoiceJson)!;
+        var issued = message.ReadRequired<InvoiceIssued>();
 
         // Durable side-check: the invoice the worker stored is still readable over the API afterwards.
         using var invoiceResponse = await Proto.Context.Rest().GetAsync($"/api/sessions/{started.Id}/invoice");
@@ -117,7 +114,7 @@ public sealed class ChargingSessionsBecomeInvoices
 
         try
         {
-            var issued = JsonSerializer.Deserialize<InvoiceIssued>(message.Payload, InvoiceJson);
+            var issued = message.ReadAsJson<InvoiceIssued>();
             return issued is { } invoice && invoice.SessionId == sessionId && invoice.InvoiceId != Guid.Empty;
         }
         catch (JsonException)

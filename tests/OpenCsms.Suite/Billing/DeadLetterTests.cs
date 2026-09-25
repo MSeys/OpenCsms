@@ -7,6 +7,7 @@ using OpenCsms.Suite.Support;
 using ProtoTest.Core;
 using ProtoTest.NUnit;
 using RabbitMQ.Client;
+using BillingWorker = OpenCsms.Billing.Worker.Program;
 
 /// <summary>
 /// The billing worker's negative path: a <c>session.ended</c> naming a session the store does not know
@@ -18,9 +19,7 @@ using RabbitMQ.Client;
 [RequiresCapability(
     ProtoCapabilityKinds.Broker,
     Reason = "The poison travels the product's exchange and dead-letter queue; configure the broker.")]
-[RequiresCapability(
-    ProtoCapabilityKinds.Worker,
-    Reason = "Only the billing worker consumes session.ended and dead-letters what it cannot bill.")]
+[RequiresWorker<BillingWorker>]
 public sealed class DeadLetterTests
 {
     private const string RetriesHeader = "x-opencsms-retries";

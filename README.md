@@ -51,10 +51,11 @@ before any new feature.
   publishes `session.ended`; if the publish fails the client gets a 500 but the session stays ended and
   the event is never published, so a retry answers 409 and the invoice is lost. M1 accepts this for now;
   the fix (a transactional outbox or a retry) is scheduled with M4's fault-injection work.
-- **Every test connects to the broker at setup.** The run-wide `ProtoTest:Messaging:Destinations:0`
-  pre-bind makes the suite's tap prepare its destination during test setup, including the REST-only
-  contract tests; with the ProtoTest address-precedence fix (audit ADDR-1) still open, a run without a
-  broker fails setup rather than skipping. Recorded in [COVERAGE.md](COVERAGE.md); revisit after ADDR-1.
+- **Every test connects to the broker at setup.** The run-wide `Tap(CsmsEvents.Exchange)` pre-bind
+  makes the suite's tap prepare its destination during test setup, including the REST-only contract
+  tests, so a run without a broker fails setup there rather than skipping; the broker capability is
+  what gates the tests that need it, and the pre-bind is suite-wide by design (R1a-13). Recorded in
+  [COVERAGE.md](COVERAGE.md).
 - The DLQ assertion uses a raw RabbitMQ client (`tests/OpenCsms.Suite/Support/RabbitMqRawClient.cs`):
   ProtoTest's tap binds destinations as exchanges and `ProtoMessage` drops the routing key, so a queue
   cannot be awaited through it. The `(exchange, routingKey)` addition is recorded in plan-5 (REF-5) for

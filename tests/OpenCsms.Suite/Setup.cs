@@ -34,12 +34,6 @@ public sealed class Setup : ProtoTestAssembly
             .ConfigureClock(SuiteClock.Seed())
             .ConfigureTracing(trace => trace.OutputPath = Path.Combine("TestResults", "OpenCsms", "opencsms.prototrace"))
             .ConfigureAppConfiguration(configuration => configuration
-                .AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    // Bind the test's tap before the system under test publishes: the worker can publish
-                    // invoice.issued before a test reaches its first AwaitAsync.
-                    ["ProtoTest:Messaging:Destinations:0"] = CsmsEvents.Exchange
-                })
                 // The mode switch: an environment that exports the declared keys (the README's recipe)
                 // makes the containers below skip, so one Setup serves both modes.
                 .AddEnvironmentVariables())
@@ -54,7 +48,12 @@ public sealed class Setup : ProtoTestAssembly
                 .AddRest(rest => rest
                     .AddClient(CsmsTargets.Api)
                     .AddCollector<RestCoverageCollector>()))
-            .AddMessaging(messaging => messaging.CaptureAttachments().UseRabbitMq())
+            .AddMessaging(messaging => messaging
+                .CaptureAttachments()
+                // Pre-bind the test's tap before the system under test publishes: the worker can
+                // publish invoice.issued before a test reaches its first AwaitAsync.
+                .Tap(CsmsEvents.Exchange)
+                .UseRabbitMq())
             .AddSink<JsonReportSink>(sink => sink.OutputPath = Path.Combine(
                 "TestResults", "OpenCsms", "report.json"))
             .AddSink<HtmlReportSink>(sink =>

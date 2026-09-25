@@ -6,9 +6,9 @@ using ProtoTest.Core;
 using ProtoTest.Rest;
 
 /// <summary>
-/// Provisions this test's isolated operator - a tenant, its tariff and its station - with names derived
-/// from <see cref="ProtoExecutionContext.TestId"/>, so a journey can run repeatedly against a database
-/// that outlives the test process. The test reads the provisioned <see cref="CsmsOperator"/>.
+/// Provisions this test's isolated operator - a tenant, its tariff and its station - with names from
+/// <see cref="ProtoExecutionContext.UniqueName(string, int)"/>, so a journey can run repeatedly against
+/// a database that outlives the test process. The test reads the provisioned <see cref="CsmsOperator"/>.
 /// </summary>
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, Inherited = true)]
 public sealed class CsmsOperatorAttribute : ProtoAttribute
@@ -19,13 +19,13 @@ public sealed class CsmsOperatorAttribute : ProtoAttribute
     public override async Task BeforeTestAsync(ProtoExecutionContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        var tenantId = $"op-{context.TestId}";
+        var tenantId = context.UniqueName("op");
 
         using var tariffResponse = await context.Rest()
             .Body(new
             {
                 tenantId,
-                name = $"tariff-{context.TestId}",
+                name = context.UniqueName("tariff"),
                 energyPricePerKwh = 0.40m,
                 startFee = 1.50m,
                 idleFeePerHour = 2.00m,
@@ -40,7 +40,7 @@ public sealed class CsmsOperatorAttribute : ProtoAttribute
             .Body(new
             {
                 tenantId,
-                name = $"station-{context.TestId}",
+                name = context.UniqueName("station"),
                 connectorCount = ConnectorCount,
                 tariffId = tariff.Id
             })
