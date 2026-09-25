@@ -14,8 +14,8 @@ The point is the *one suite, many environments* promise, without `if` statements
 
 | Mode | API | PostgreSQL & RabbitMQ | State |
 | --- | --- | --- | --- |
-| In-process + Testcontainers | hosted by the suite (`AddAspNetCoreServer`) | started by the suite (Testcontainers) | verified: four tests green, twice, fresh containers |
-| Configured | hosted by the suite | an environment you provide through configuration; the suite's containers skip | verified: four tests green, twice, one persistent database (plan-5 1.7) |
+| In-process + Testcontainers | hosted by the suite (`AddAspNetCoreServer`) | started by the suite (Testcontainers) | verified: six tests green, twice, fresh containers |
+| Configured | hosted by the suite | an environment you provide through configuration; the suite's containers skip | verified: six tests green, twice, one persistent database (plan-5 1b) |
 | Container topology (planned) | a container | containers, `docker compose` / Aspire | M4 |
 | Published (planned) | a staging URL via `ProtoTest:Applications:Csms:BaseUrl` | the staging stack | M4 |
 
@@ -27,7 +27,7 @@ seen; the framework gap that remains (the worker's `Program.Main`) is in the gap
 ## Status
 
 M1 is in progress: the domain, the API, the billing worker and the first end-to-end journey. The suite
-is green in both modes (`dotnet test tests/OpenCsms.Suite` → 4/4): in container mode with fresh
+is green in both modes (`dotnet test tests/OpenCsms.Suite` → 6/6): in container mode with fresh
 Testcontainers, and in configured mode twice against one database. The milestones below are the ones in
 the [reference demo brief](https://github.com/MSeys/ProtoTest) — this README tracks them honestly.
 
@@ -47,6 +47,14 @@ before any new feature.
 - The worker's `Program.Main` cannot see the run's configuration before `Build()` (ProtoTest.Hosting
   P1-gap); the product reads its connection string inside the EF options factory. The fix is Phase 2
   audit A3.
+- **Ending a session is at-most-once.** `/api/sessions/{id}/end` commits the ended session before it
+  publishes `session.ended`; if the publish fails the client gets a 500 but the session stays ended and
+  the event is never published, so a retry answers 409 and the invoice is lost. M1 accepts this for now;
+  the fix (a transactional outbox or a retry) is scheduled with M4's fault-injection work.
+- **Every test connects to the broker at setup.** The run-wide `ProtoTest:Messaging:Destinations:0`
+  pre-bind makes the suite's tap prepare its destination during test setup, including the REST-only
+  contract tests; with the ProtoTest address-precedence fix (audit ADDR-1) still open, a run without a
+  broker fails setup rather than skipping. Recorded in [COVERAGE.md](COVERAGE.md); revisit after ADDR-1.
 - The DLQ assertion uses a raw RabbitMQ client (`tests/OpenCsms.Suite/Support/RabbitMqRawClient.cs`):
   ProtoTest's tap binds destinations as exchanges and `ProtoMessage` drops the routing key, so a queue
   cannot be awaited through it. The `(exchange, routingKey)` addition is recorded in plan-5 (REF-5) for
@@ -73,6 +81,10 @@ dotnet test
 
 The first key is the product's database, the second the product's broker, and the third the address
 ProtoTest's own messaging tap uses.
+
+Each mode has a recorded run: `pwsh eng/run-suite.ps1 -Mode container` and
+`pwsh eng/run-suite.ps1 -Mode configured` (the latter requires the three keys above) stream the run to
+the console and tee it to `artifacts/gates/opencsms-<mode>-<timestamp>.log`.
 
 `docker compose up` (M4) starts the whole topology for manual use.
 

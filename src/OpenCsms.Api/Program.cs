@@ -21,7 +21,9 @@ public sealed class Program
         var app = builder.Build();
 
         // The suite starts PostgreSQL before the application, so migrating at boot is safe in every
-        // mode; the worker migrates too, and the migration lock makes the race harmless.
+        // mode. This is the only migrator (R1a-07): EF Core 8 does not serialize concurrent
+        // migrations, the suite starts the hosts sequentially today, and M4's concurrent boot
+        // decision will revisit this (a PostgreSQL advisory lock, or one designated migrator).
         app.Services.MigrateCsmsData();
 
         app.UseExceptionHandler();

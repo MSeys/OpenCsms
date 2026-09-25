@@ -16,7 +16,7 @@ using ProtoTest.Rest;
 /// product's exchange; the REST read afterwards is the durable side-check. The API answers before the
 /// invoice exists, so the suite waits for the event the way a client would.
 /// </summary>
-[Application("Csms")]
+[Application(CsmsTargets.Api)]
 [CsmsOperator]
 [RequiresCapability(
     ProtoCapabilityKinds.Broker,
@@ -74,11 +74,18 @@ public sealed class ChargingSessionsBecomeInvoices
 
         Assert.Multiple(() =>
         {
-            Assert.That(issued.SessionId, Is.EqualTo(started.Id));
-            Assert.That(issued.TenantId, Is.EqualTo(op.TenantId));
-            Assert.That(issued.Total, Is.EqualTo(10.30m));
+            // sessionId, tenantId, total and currency are already pinned by the shape assertion above;
+            // only the facts it cannot express are asserted again here.
+            Assert.That(
+                issued.IssuedAtUtc,
+                Is.EqualTo(SuiteClock.Instant),
+                "the worker stamped the event with the run's injected clock");
             Assert.That(invoice.SessionId, Is.EqualTo(started.Id));
             Assert.That(invoice.TenantId, Is.EqualTo(op.TenantId));
+            Assert.That(
+                invoice.IssuedAtUtc,
+                Is.EqualTo(SuiteClock.Instant),
+                "the stored invoice carries the injected clock's instant, not the machine's");
             Assert.That(invoice.EnergyKwh, Is.EqualTo(22m));
             Assert.That(invoice.EnergyAmount, Is.EqualTo(8.80m));
             Assert.That(invoice.StartFeeAmount, Is.EqualTo(1.50m));

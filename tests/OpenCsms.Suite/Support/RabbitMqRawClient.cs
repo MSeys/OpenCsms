@@ -7,6 +7,7 @@ using ProtoTest.Core;
 using ProtoTest.Messaging.RabbitMq;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using RabbitMQ.Client.Exceptions;
 
 /// <summary>
 /// A raw RabbitMQ client for the assertions the ProtoTest messaging tap cannot express: publishing to
@@ -124,11 +125,23 @@ public sealed class RabbitMqRawClient : IAsyncDisposable
         }
         finally
         {
-            await _channel.BasicCancelAsync(consumerTag, cancellationToken: CancellationToken.None);
+            try
+            {
+                await _channel.BasicCancelAsync(consumerTag, cancellationToken: CancellationToken.None);
+            }
+            catch (AlreadyClosedException)
+            {
+                // The connection died under the poll; cancelling has nothing left to do, and the
+                // real failure (for example the timeout above) must survive teardown (R1a-15).
+            }
         }
     }
 
-    private static string ResolveConnectionString(ProtoExecutionContext context)
+    /// <summary>
+    /// Resolves the broker address this run uses, the same way <see cref="ConnectAsync"/> does, for a
+    /// test that must hand the address to a product component instead of a raw client.
+    /// </summary>
+    public static string ResolveConnectionString(ProtoExecutionContext context)
     {
         var configured = context.Configuration[RabbitMqOptions.ConnectionStringSetting]
             ?? context.Configuration["Messaging:RabbitMq:ConnectionString"]

@@ -19,7 +19,10 @@ public sealed class Program
         builder.Services.AddRabbitMqEventPublisher();
         builder.Services.AddHostedService<SessionEndedConsumer>();
         var host = builder.Build();
-        host.Services.MigrateCsmsData();
+
+        // Migrations run from the API only (R1a-07): EF Core 8 does not serialize concurrent
+        // migrations, the suite starts the hosts sequentially today, and M4's concurrent boot
+        // decision will revisit this (a PostgreSQL advisory lock, or one designated migrator).
         host.Run();
     }
 }

@@ -15,12 +15,13 @@ using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
 /// <summary>
-/// Consumes <c>session.ended</c> and stores an invoice. Retries run in-process (republish with an
-/// attempts header, then acknowledge), and a message that still fails is dead-lettered through the
-/// queue's <c>x-dead-letter-exchange</c> - the worker never spins on a poisonous message. The unique
-/// session index makes storing idempotent; publishing <c>invoice.issued</c> is mandatory on every
-/// delivery, including a redelivery, and a failed publish fails the handler so the retry path sees it.
-/// The invoice is stamped with the run's clock, not the machine's.
+/// Consumes <c>session.ended</c> and stores an invoice. Retries run in-process (republish with a
+/// retries header, then acknowledge), and a message that still fails after <see cref="MaxRetries"/>
+/// retries - that is, on its fourth attempt - is dead-lettered through the queue's
+/// <c>x-dead-letter-exchange</c>, so the worker never spins on a poisonous message. The unique session
+/// index makes storing idempotent; publishing <c>invoice.issued</c> is mandatory on every delivery,
+/// including a redelivery, and a failed publish fails the handler so the retry path sees it. The
+/// invoice is stamped with the run's clock, not the machine's.
 /// </summary>
 public sealed class SessionEndedConsumer(
     IServiceScopeFactory scopeFactory,
@@ -28,8 +29,13 @@ public sealed class SessionEndedConsumer(
     TimeProvider timeProvider,
     ILogger<SessionEndedConsumer> logger) : BackgroundService
 {
-    private const int MaxAttempts = 3;
-    private const string AttemptsHeader = "x-opencsms-attempts";
+    private const int MaxRetries = 3;
+
+    /// <summary>
+    /// Counts completed retries, not attempts: absent on the first delivery, 1 on the second, and
+    /// <see cref="MaxRetries"/> on the dead-lettered fourth attempt.
+    /// </summary>
+    private const string RetriesHeader = "x-opencsms-retries";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private IConnection? _connection;
@@ -66,7 +72,7 @@ public sealed class SessionEndedConsumer(
             return;
         }
 
-        var attempts = ReadAttempts(args.BasicProperties);
+        var retries = ReadRetries(args.BasicProperties);
         try
         {
             await ProcessAsync(args, stoppingToken);
@@ -79,12 +85,12 @@ public sealed class SessionEndedConsumer(
         }
         catch (Exception exception)
         {
-            if (attempts >= MaxAttempts)
+            if (retries >= MaxRetries)
             {
                 logger.LogError(
                     exception,
                     "Session ended message failed after {Attempts} attempt(s); dead-lettering.",
-                    attempts);
+                    retries + 1);
                 await _channel.BasicNackAsync(args.DeliveryTag, multiple: false, requeue: false, stoppingToken);
                 return;
             }
@@ -92,11 +98,11 @@ public sealed class SessionEndedConsumer(
             logger.LogWarning(
                 exception,
                 "Session ended message failed (attempt {Attempt}/{Max}); retrying.",
-                attempts + 1,
-                MaxAttempts);
-            await RepublishAsync(args, attempts + 1, stoppingToken);
+                retries + 1,
+                MaxRetries + 1);
+            await RepublishAsync(args, retries + 1, stoppingToken);
             await _channel.BasicAckAsync(args.DeliveryTag, multiple: false, stoppingToken);
-            await Task.Delay(TimeSpan.FromMilliseconds(200 * (attempts + 1)), stoppingToken);
+            await Task.Delay(TimeSpan.FromMilliseconds(200 * (retries + 1)), stoppingToken);
         }
     }
 
@@ -146,13 +152,13 @@ public sealed class SessionEndedConsumer(
             cancellationToken);
     }
 
-    private async Task RepublishAsync(BasicDeliverEventArgs args, int attempts, CancellationToken cancellationToken)
+    private async Task RepublishAsync(BasicDeliverEventArgs args, int retries, CancellationToken cancellationToken)
     {
         var properties = new BasicProperties
         {
             ContentType = args.BasicProperties.ContentType ?? "application/json",
             DeliveryMode = DeliveryModes.Persistent,
-            Headers = new Dictionary<string, object?> { [AttemptsHeader] = attempts }
+            Headers = new Dictionary<string, object?> { [RetriesHeader] = retries }
         };
         // The default exchange routes by queue name, so the retry lands where the original did.
         await _channel!.BasicPublishAsync(
@@ -164,9 +170,9 @@ public sealed class SessionEndedConsumer(
             cancellationToken: cancellationToken);
     }
 
-    private static int ReadAttempts(IReadOnlyBasicProperties properties)
+    private static int ReadRetries(IReadOnlyBasicProperties properties)
     {
-        if (properties.Headers is null || !properties.Headers.TryGetValue(AttemptsHeader, out var value) || value is null)
+        if (properties.Headers is null || !properties.Headers.TryGetValue(RetriesHeader, out var value) || value is null)
         {
             return 0;
         }

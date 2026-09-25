@@ -3,6 +3,7 @@ namespace OpenCsms.Suite;
 using Microsoft.Extensions.Configuration;
 using OpenCsms.Contracts;
 using OpenCsms.Data;
+using OpenCsms.Suite.Support;
 using ProtoTest.AspNetCore;
 using ProtoTest.Core;
 using ProtoTest.Hosting;
@@ -28,6 +29,9 @@ public sealed class Setup : ProtoTestAssembly
     protected override void Configure(IProtoHostBuilder builder)
     {
         builder
+            // Time is a setting here too: the whole run lives at one instant, so the worker's
+            // timestamps can be asserted and a product that reads the machine clock fails (R1a-04).
+            .ConfigureClock(SuiteClock.Seed())
             .ConfigureTracing(trace => trace.OutputPath = Path.Combine("TestResults", "OpenCsms", "opencsms.prototrace"))
             .ConfigureAppConfiguration(configuration => configuration
                 .AddInMemoryCollection(new Dictionary<string, string?>
@@ -45,10 +49,10 @@ public sealed class Setup : ProtoTestAssembly
                 RabbitMqOptions.ConnectionStringSetting,
                 "Messaging:RabbitMq:ConnectionString")
             .AddWorkerHost<BillingWorker>("Billing")
-            .AddApplication("Csms", app => app
+            .AddApplication(CsmsTargets.Api, app => app
                 .AddAspNetCoreServer<CsmsApi>()
                 .AddRest(rest => rest
-                    .AddClient("Csms")
+                    .AddClient(CsmsTargets.Api)
                     .AddCollector<RestCoverageCollector>()))
             .AddMessaging(messaging => messaging.CaptureAttachments().UseRabbitMq())
             .AddSink<JsonReportSink>(sink => sink.OutputPath = Path.Combine(

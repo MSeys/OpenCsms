@@ -23,8 +23,10 @@ using RabbitMQ.Client;
     Reason = "Only the billing worker consumes session.ended and dead-letters what it cannot bill.")]
 public sealed class DeadLetterTests
 {
-    private const string AttemptsHeader = "x-opencsms-attempts";
-    private const int MaxAttempts = 3;
+    private const string RetriesHeader = "x-opencsms-retries";
+
+    /// <summary>Completed retries before the fourth attempt is dead-lettered.</summary>
+    private const int MaxRetries = 3;
     private static readonly TimeSpan DeliveryTimeout = TimeSpan.FromSeconds(30);
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -52,7 +54,7 @@ public sealed class DeadLetterTests
             candidate => IsFor(candidate, sessionId),
             DeliveryTimeout);
         var payload = JsonSerializer.Deserialize<SessionEnded>(delivery.Body.Span, Json);
-        var attempts = ReadAttempts(delivery.Properties);
+        var retries = ReadRetries(delivery.Properties);
 
         Assert.Multiple(() =>
         {
@@ -61,9 +63,10 @@ public sealed class DeadLetterTests
                 Is.EqualTo(sessionId),
                 "the dead-lettered message is the poison this test published");
             Assert.That(
-                attempts,
-                Is.EqualTo(MaxAttempts),
-                $"the worker retries {MaxAttempts} times before dead-lettering ('{AttemptsHeader}')");
+                retries,
+                Is.EqualTo(MaxRetries),
+                $"the dead-lettered message records {MaxRetries} completed retries ('{RetriesHeader}'), " +
+                $"so it was attempted {MaxRetries + 1} times");
         });
     }
 
@@ -79,9 +82,9 @@ public sealed class DeadLetterTests
         }
     }
 
-    private static int? ReadAttempts(IReadOnlyBasicProperties properties)
+    private static int? ReadRetries(IReadOnlyBasicProperties properties)
     {
-        if (properties.Headers is null || !properties.Headers.TryGetValue(AttemptsHeader, out var value))
+        if (properties.Headers is null || !properties.Headers.TryGetValue(RetriesHeader, out var value))
         {
             return null;
         }

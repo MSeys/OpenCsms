@@ -8,14 +8,14 @@ using ProtoTest.Rest;
 
 /// <summary>
 /// The synchronous REST contracts around a charging session: bad input is rejected before any billing
-/// happens. Provisioning the operator uses REST only, so this class needs neither the worker nor the
-/// broker and never touches the journey's messaging.
+/// happens. The connector test provisions its operator through <see cref="CsmsOperatorAttribute"/>;
+/// the unknown-session test touches no provisioned state, so it needs no REST writes of its own.
 /// </summary>
-[Application("Csms")]
-[CsmsOperator]
+[Application(CsmsTargets.Api)]
 public sealed class SessionContracts
 {
     [ProtoTest]
+    [CsmsOperator]
     public async Task AConnectorOutsideTheStationIsRejected()
     {
         var op = Proto.Context.Resolve<CsmsOperator>();
