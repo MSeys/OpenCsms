@@ -9,4 +9,7 @@ namespace OpenCsms.Suite.Support;
 public static class CsmsTargets
 {
     public const string Api = "Csms";
+
+    /// <summary>The device client the OCPP charge-point simulator hangs off.</summary>
+    public const string Chargers = "Chargers";
 }

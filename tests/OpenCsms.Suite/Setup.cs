@@ -1,11 +1,16 @@
 namespace OpenCsms.Suite;
 
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using OpenCsms.Contracts;
 using OpenCsms.Data;
+using OpenCsms.Suite.Devices;
 using OpenCsms.Suite.Support;
 using ProtoTest.AspNetCore;
 using ProtoTest.Core;
+using ProtoTest.Devices;
+using ProtoTest.Devices.WebSocket;
+using ProtoTest.Devices.WebSocket.AspNetCore;
 using ProtoTest.Hosting;
 using ProtoTest.Messaging;
 using ProtoTest.Messaging.RabbitMq;
@@ -43,8 +48,20 @@ public sealed class Setup : ProtoTestAssembly
                 RabbitMqOptions.ConnectionStringSetting,
                 "Messaging:RabbitMq:ConnectionString")
             .AddWorkerHost<BillingWorker>("Billing")
+            // The OCPP charge points: one in-process transport per (program, application), so the same
+            // client registration reaches the gateway through the TestServer here and over the socket
+            // when the application's address is configured. No mode conditionals either way.
+            .AddInProcessWebSocketDevices<CsmsApi>(CsmsTargets.Api)
             .AddApplication(CsmsTargets.Api, app => app
-                .AddAspNetCoreServer<CsmsApi>()
+                .AddAspNetCoreServer<CsmsApi>(webHost => webHost
+                    // The operator's remote commands wait for the device's own answer. The product's
+                    // default is ten seconds; two keep the timeout journey fast while a charge point
+                    // that answers at all answers in milliseconds.
+                    .UseSetting("Ocpp:RemoteCallTimeoutSeconds", "2"))
+                .AddDevices(devices => devices
+                    .AddWebSocketClient(CsmsTargets.Chargers, path: "/ocpp/{deviceId}")
+                        .AddDevice<AcCharger>()
+                        .AddProtocol<OcppProtocol>())
                 .AddRest(rest => rest
                     .AddClient(CsmsTargets.Api)
                     .AddCollector<RestCoverageCollector>()))

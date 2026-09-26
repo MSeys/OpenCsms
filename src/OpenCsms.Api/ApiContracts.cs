@@ -1,6 +1,7 @@
 namespace OpenCsms.Api;
 
 using OpenCsms.Domain;
+using OpenCsms.Domain.Ocpp;
 
 public sealed record RegisterTariffRequest(
     string TenantId,
@@ -13,6 +14,7 @@ public sealed record RegisterTariffRequest(
 
 public sealed record RegisterStationRequest(
     string TenantId,
+    string ChargePointId,
     string Name,
     int ConnectorCount,
     Guid TariffId);
@@ -20,6 +22,9 @@ public sealed record RegisterStationRequest(
 public sealed record StartSessionRequest(Guid StationId, int ConnectorId);
 
 public sealed record MeterValueRequest(decimal TotalKwh);
+
+/// <summary>The operator asks a connected charge point to start a transaction.</summary>
+public sealed record RemoteStartRequest(string IdTag, int? ConnectorId = null);
 
 public sealed record TariffResponse(
     Guid Id,
@@ -46,16 +51,37 @@ public sealed record TariffResponse(
 public sealed record StationResponse(
     Guid Id,
     string TenantId,
+    string ChargePointId,
     string Name,
     int ConnectorCount,
-    Guid TariffId)
+    Guid TariffId,
+    DateTimeOffset? LastSeenAtUtc)
 {
     public static StationResponse From(Station station)
-        => new(station.Id, station.TenantId, station.Name, station.ConnectorCount, station.TariffId);
+        => new(
+            station.Id,
+            station.TenantId,
+            station.ChargePointId,
+            station.Name,
+            station.ConnectorCount,
+            station.TariffId,
+            station.LastSeenAtUtc);
+}
+
+/// <summary>The last status the charge point reported for one connector, for the operator view.</summary>
+public sealed record ConnectorResponse(
+    int ConnectorId,
+    string Status,
+    string ErrorCode,
+    DateTimeOffset UpdatedAtUtc)
+{
+    public static ConnectorResponse From(Connector connector)
+        => new(connector.ConnectorId, connector.Status.ToString(), connector.ErrorCode.ToString(), connector.UpdatedAtUtc);
 }
 
 public sealed record SessionResponse(
     Guid Id,
+    int TransactionId,
     string TenantId,
     Guid StationId,
     int ConnectorId,
@@ -67,6 +93,7 @@ public sealed record SessionResponse(
     public static SessionResponse From(ChargingSession session)
         => new(
             session.Id,
+            session.TransactionId,
             session.TenantId,
             session.StationId,
             session.ConnectorId,
@@ -74,6 +101,13 @@ public sealed record SessionResponse(
             session.EndedAtUtc,
             session.EnergyKwh,
             session.IsOpen);
+}
+
+/// <summary>The device's authorization decision for a server-initiated call.</summary>
+public sealed record RemoteCommandResponse(string Status)
+{
+    public static RemoteCommandResponse From(IdTagInfo info)
+        => new(info.Status.ToString());
 }
 
 public sealed record InvoiceResponse(

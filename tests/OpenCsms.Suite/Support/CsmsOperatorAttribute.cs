@@ -20,6 +20,7 @@ public sealed class CsmsOperatorAttribute : ProtoAttribute
     {
         ArgumentNullException.ThrowIfNull(context);
         var tenantId = context.UniqueName("op");
+        var chargePointId = context.UniqueName("cp");
 
         using var tariffResponse = await context.Rest()
             .Body(new
@@ -40,6 +41,7 @@ public sealed class CsmsOperatorAttribute : ProtoAttribute
             .Body(new
             {
                 tenantId,
+                chargePointId,
                 name = context.UniqueName("station"),
                 connectorCount = ConnectorCount,
                 tariffId = tariff.Id
@@ -49,9 +51,14 @@ public sealed class CsmsOperatorAttribute : ProtoAttribute
         var station = stationResponse.ReadAsJson<StationResponse>()
             ?? throw new InvalidOperationException("Registering the station answered an empty body.");
 
-        context.SetContext(new CsmsOperator(tenantId, tariff.Id, station.Id, ConnectorCount));
+        context.SetContext(new CsmsOperator(tenantId, chargePointId, tariff.Id, station.Id, ConnectorCount));
     }
 }
 
 /// <summary>The operator one test provisioned: its tenant and the tariff and station registered for it.</summary>
-public sealed record CsmsOperator(string TenantId, Guid TariffId, Guid StationId, int ConnectorCount) : IProtoContext;
+public sealed record CsmsOperator(
+    string TenantId,
+    string ChargePointId,
+    Guid TariffId,
+    Guid StationId,
+    int ConnectorCount) : IProtoContext;

@@ -20,6 +20,9 @@
     <PackageReference Include="NUnit.Analyzers" Version="4.3.0" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
     <PackageReference Include="ProtoTest.AspNetCore" Version="1.1.0-alpha.1" />
+    <PackageReference Include="ProtoTest.Devices" Version="1.1.0-alpha.1" />
+    <PackageReference Include="ProtoTest.Devices.WebSocket" Version="1.1.0-alpha.1" />
+    <PackageReference Include="ProtoTest.Devices.WebSocket.AspNetCore" Version="1.1.0-alpha.1" />
     <PackageReference Include="ProtoTest.Hosting" Version="1.1.0-alpha.1" />
     <PackageReference Include="ProtoTest.Messaging.RabbitMq" Version="1.1.0-alpha.1" />
     <PackageReference Include="ProtoTest.Messaging.RabbitMq.Testcontainers" Version="1.1.0-alpha.1" />
@@ -38,6 +41,7 @@
     <ProjectReference Include="..\..\src\OpenCsms.Billing.Worker\OpenCsms.Billing.Worker.csproj" />
     <ProjectReference Include="..\..\src\OpenCsms.Data\OpenCsms.Data.csproj" />
     <ProjectReference Include="..\..\src\OpenCsms.Contracts\OpenCsms.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\OpenCsms.Domain\OpenCsms.Domain.csproj" />
     <ProjectReference Include="..\..\src\OpenCsms.Messaging\OpenCsms.Messaging.csproj" />
   </ItemGroup>
 

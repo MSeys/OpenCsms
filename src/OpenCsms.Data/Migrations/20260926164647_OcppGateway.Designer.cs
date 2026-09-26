@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using OpenCsms.Data;
@@ -11,9 +12,11 @@ using OpenCsms.Data;
 namespace OpenCsms.Data.Migrations
 {
     [DbContext(typeof(CsmsDbContext))]
-    partial class CsmsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260926164647_OcppGateway")]
+    partial class OcppGateway
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -40,10 +43,6 @@ namespace OpenCsms.Data.Migrations
 
                     b.Property<DateTimeOffset>("LastMeterAtUtc")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<decimal>("MeterStartKwh")
-                        .HasPrecision(18, 3)
-                        .HasColumnType("numeric(18,3)");
 
                     b.Property<DateTimeOffset>("StartedAtUtc")
                         .HasColumnType("timestamp with time zone");

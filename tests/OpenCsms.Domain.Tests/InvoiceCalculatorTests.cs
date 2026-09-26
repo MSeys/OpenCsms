@@ -93,6 +93,72 @@ public sealed class InvoiceCalculatorTests
     }
 
     [Test]
+    public void Calculate_ShouldNotBillIdleTimeExactlyAtTheGracePeriod()
+    {
+        // The stop lands exactly on the grace boundary: only time past it is billable.
+        var session = EndedSession(10m, TimeSpan.FromHours(2), idleTail: TimeSpan.FromMinutes(10));
+        var invoice = InvoiceCalculator.Calculate(session, Tariff(idleFee: 2m, grace: TimeSpan.FromMinutes(10)), Start);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(invoice.IdleHours, Is.Zero);
+            Assert.That(invoice.IdleFeeAmount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public void Calculate_ShouldBillOneStartedHourOneSecondPastTheGracePeriod()
+    {
+        // The boundary is exclusive: a second past the grace starts the first billable hour.
+        var session = EndedSession(
+            10m,
+            TimeSpan.FromHours(2),
+            idleTail: TimeSpan.FromMinutes(10) + TimeSpan.FromSeconds(1));
+        var invoice = InvoiceCalculator.Calculate(session, Tariff(idleFee: 2m, grace: TimeSpan.FromMinutes(10)), Start);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(invoice.IdleHours, Is.EqualTo(1));
+            Assert.That(invoice.IdleFeeAmount, Is.EqualTo(2m));
+        });
+    }
+
+    [Test]
+    public void Calculate_ShouldRoundBillableIdleUpToStartedHours()
+    {
+        // 2h05m past the grace period is three started hours, not two.
+        var session = EndedSession(
+            10m,
+            TimeSpan.FromHours(4),
+            idleTail: TimeSpan.FromMinutes(10) + TimeSpan.FromMinutes(125));
+        var invoice = InvoiceCalculator.Calculate(session, Tariff(idleFee: 2m, grace: TimeSpan.FromMinutes(10)), Start);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(invoice.IdleHours, Is.EqualTo(3));
+            Assert.That(invoice.IdleFeeAmount, Is.EqualTo(6m));
+        });
+    }
+
+    [Test]
+    public void Calculate_ShouldRoundTheIdleFeeAwayFromZero()
+    {
+        // One started hour at 2.005 rounds the component to 2.01 like every other money amount.
+        var session = EndedSession(0m, TimeSpan.FromHours(1), idleTail: TimeSpan.FromMinutes(35));
+        var invoice = InvoiceCalculator.Calculate(
+            session,
+            Tariff(idleFee: 2.005m, grace: TimeSpan.FromMinutes(10)),
+            Start);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(invoice.IdleHours, Is.EqualTo(1));
+            Assert.That(invoice.IdleFeeAmount, Is.EqualTo(2.01m));
+            Assert.That(invoice.Total, Is.EqualTo(2.01m));
+        });
+    }
+
+    [Test]
     public void Calculate_ShouldRejectAnOpenSession()
     {
         var session = ChargingSession.Start("acme", Guid.NewGuid(), 1, Start);

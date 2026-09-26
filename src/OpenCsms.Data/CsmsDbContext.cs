@@ -12,6 +12,8 @@ public sealed class CsmsDbContext(DbContextOptions<CsmsDbContext> options) : DbC
 
     public DbSet<ChargingSession> Sessions => Set<ChargingSession>();
 
+    public DbSet<Connector> Connectors => Set<Connector>();
+
     public DbSet<Invoice> Invoices => Set<Invoice>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -29,12 +31,26 @@ public sealed class CsmsDbContext(DbContextOptions<CsmsDbContext> options) : DbC
         modelBuilder.Entity<Station>(station =>
         {
             station.Property(value => value.Name).HasMaxLength(120);
+            station.Property(value => value.ChargePointId).HasMaxLength(64);
+            station.HasIndex(value => value.ChargePointId).IsUnique();
             station.HasIndex(value => new { value.TenantId, value.Name }).IsUnique();
+        });
+
+        modelBuilder.Entity<Connector>(connector =>
+        {
+            connector.HasKey(value => new { value.StationId, value.ConnectorId });
+            connector.Property(value => value.Status).HasConversion<string>().HasMaxLength(32);
+            connector.Property(value => value.ErrorCode).HasConversion<string>().HasMaxLength(32);
         });
 
         modelBuilder.Entity<ChargingSession>(session =>
         {
+            session.Property(value => value.MeterStartKwh).HasPrecision(18, 3);
             session.Property(value => value.EnergyKwh).HasPrecision(18, 3);
+            // The OCPP transaction number is the CSMS's, assigned by the store so charges and
+            // stop-transactions can be looked up by the number the charge point was told.
+            session.Property(value => value.TransactionId).UseIdentityAlwaysColumn();
+            session.HasIndex(value => value.TransactionId).IsUnique();
             session.HasIndex(value => new { value.TenantId, value.StartedAtUtc });
             session.HasIndex(value => new { value.StationId, value.ConnectorId });
         });

@@ -1,7 +1,6 @@
 namespace OpenCsms.Suite.Journeys;
 
 using System.Net;
-using System.Text.Json;
 using OpenCsms.Api;
 using OpenCsms.Contracts;
 using OpenCsms.Suite.Support;
@@ -53,7 +52,7 @@ public sealed class ChargingSessionsBecomeInvoices
         // the exchange, so the predicate names both the session and the event.
         var message = await Proto.Context.Messaging().AwaitAsync(
             CsmsEvents.Exchange,
-            candidate => IsInvoiceIssuedFor(candidate, started.Id),
+            candidate => CsmsMessages.IsInvoiceIssuedFor(candidate, started.Id),
             InvoiceTimeout);
         message.Should.MatchShape(new
         {
@@ -99,27 +98,5 @@ public sealed class ChargingSessionsBecomeInvoices
             .PostAsync("/api/sessions");
         response.Should.HaveHttpStatus(HttpStatusCode.Created);
         return response.ReadAsJson<SessionResponse>()!;
-    }
-
-    /// <summary>
-    /// The tap receives every routing key on the exchange, so the match names the invoice event by
-    /// requiring an invoice id as well as this session id.
-    /// </summary>
-    private static bool IsInvoiceIssuedFor(ProtoMessage message, Guid sessionId)
-    {
-        if (message.Payload is null || !message.Payload.Contains(sessionId.ToString(), StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        try
-        {
-            var issued = message.ReadAsJson<InvoiceIssued>();
-            return issued is { } invoice && invoice.SessionId == sessionId && invoice.InvoiceId != Guid.Empty;
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
     }
 }

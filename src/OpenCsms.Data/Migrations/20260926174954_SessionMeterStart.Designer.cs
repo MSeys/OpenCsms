@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using OpenCsms.Data;
@@ -11,9 +12,11 @@ using OpenCsms.Data;
 namespace OpenCsms.Data.Migrations
 {
     [DbContext(typeof(CsmsDbContext))]
-    partial class CsmsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260926174954_SessionMeterStart")]
+    partial class SessionMeterStart
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
