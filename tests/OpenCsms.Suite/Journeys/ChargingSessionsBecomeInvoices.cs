@@ -1,7 +1,6 @@
 namespace OpenCsms.Suite.Journeys;
 
 using System.Net;
-using OpenCsms.Api;
 using OpenCsms.Contracts;
 using OpenCsms.Suite.Support;
 using ProtoTest.Core;
@@ -11,10 +10,11 @@ using ProtoTest.Rest;
 using BillingWorker = OpenCsms.Billing.Worker.Program;
 
 /// <summary>
-/// The M1 journey: the operator provisioned by <see cref="CsmsOperatorAttribute"/> charges a session,
-/// and the invoice arrives as the billing worker's asynchronous <c>invoice.issued</c> event on the
-/// product's exchange; the REST read afterwards is the durable side-check. The API answers before the
-/// invoice exists, so the suite waits for the event the way a client would.
+/// The charging-to-invoice journey: the operator provisioned by
+/// <see cref="CsmsOperatorAttribute"/> charges a session, and the invoice arrives as the billing
+/// worker's asynchronous <c>invoice.issued</c> event on the product's exchange; the REST read
+/// afterwards is the durable side-check. The API answers before the invoice exists, so the suite
+/// waits for the event the way a client would.
 /// </summary>
 [Application(CsmsTargets.Api)]
 [CsmsOperator]

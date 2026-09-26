@@ -1,18 +1,18 @@
 namespace OpenCsms.Api.Ocpp;
 
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-using OpenCsms.Data;
+using OpenCsms.Application.Catalog;
+using OpenCsms.Application.ChargePoints;
 using OpenCsms.Domain;
-using OpenCsms.Domain.Ocpp;
-using OpenCsms.Messaging;
+using OpenCsms.Protocol.Ocpp;
 
 /// <summary>
-/// The OCPP 1.6J gateway: one WebSocket per charge point at <c>/ocpp/{chargePointId}</c>. Calls update
-/// the station's domain state and the charging-session lifecycle through the same store and the same
-/// <c>session.ended</c> event the REST API uses; answers are call results, and anything the subset does
-/// not implement is refused with a call error instead of a guess. The exact subset is documented in the
-/// repository README.
+/// The OCPP 1.6J gateway: one WebSocket per charge point at <c>/ocpp/{chargePointId}</c>. Each call
+/// is parsed through the protocol, handed to the application's charge-point use cases over the store
+/// ports, and its outcome mapped back to the OCPP answer; the same <c>session.ended</c> event the
+/// REST API publishes reaches the billing worker. Answers are call results, and anything the subset
+/// does not implement is refused with a call error instead of a guess. The exact subset is documented
+/// in the repository README.
 /// </summary>
 public sealed class OcppGateway(
     IServiceScopeFactory scopeFactory,
@@ -63,21 +63,37 @@ public sealed class OcppGateway(
     private async Task<object> DispatchAsync(string chargePointId, OcppCall call, CancellationToken cancellationToken)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<CsmsDbContext>();
-        var publisher = scope.ServiceProvider.GetRequiredService<IEventPublisher>();
-        var now = scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow();
-        var station = await db.Stations.FirstOrDefaultAsync(
-            candidate => candidate.ChargePointId == chargePointId,
-            cancellationToken);
+        var services = scope.ServiceProvider;
+        // The station is resolved before the payload is read, so an unknown identity is refused the
+        // same way whatever shape the call has.
+        var station = await services.GetRequiredService<StationReads>()
+            .FindByChargePointIdAsync(chargePointId, cancellationToken);
+        var now = services.GetRequiredService<TimeProvider>().GetUtcNow();
 
         return call.Action switch
         {
-            OcppActions.BootNotification => await BootAsync(db, station, now, cancellationToken),
-            OcppActions.Heartbeat => await HeartbeatAsync(db, Require(station, chargePointId), now, cancellationToken),
-            OcppActions.StatusNotification => await StatusAsync(db, Require(station, chargePointId), Read<StatusNotificationRequest>(call), now, cancellationToken),
-            OcppActions.StartTransaction => await StartTransactionAsync(db, Require(station, chargePointId), Read<StartTransactionRequest>(call), now, cancellationToken),
-            OcppActions.MeterValues => await MeterValuesAsync(db, Require(station, chargePointId), Read<MeterValuesRequest>(call), now, cancellationToken),
-            OcppActions.StopTransaction => await StopTransactionAsync(db, publisher, Require(station, chargePointId), Read<StopTransactionRequest>(call), now, cancellationToken),
+            OcppActions.BootNotification => await BootAsync(services, chargePointId, now, cancellationToken),
+            OcppActions.Heartbeat => await HeartbeatAsync(services, Require(station, chargePointId), now, cancellationToken),
+            OcppActions.StatusNotification => await StatusAsync(
+                services,
+                Require(station, chargePointId),
+                Read<StatusNotificationRequest>(call),
+                cancellationToken),
+            OcppActions.StartTransaction => await StartTransactionAsync(
+                services,
+                Require(station, chargePointId),
+                Read<StartTransactionRequest>(call),
+                cancellationToken),
+            OcppActions.MeterValues => await MeterValuesAsync(
+                services,
+                Require(station, chargePointId),
+                Read<MeterValuesRequest>(call),
+                cancellationToken),
+            OcppActions.StopTransaction => await StopTransactionAsync(
+                services,
+                Require(station, chargePointId),
+                Read<StopTransactionRequest>(call),
+                cancellationToken),
             _ => throw new OcppCallException(
                 OcppErrorCodes.NotImplemented,
                 $"The CSMS does not implement '{call.Action}'. It speaks: BootNotification, Heartbeat, " +
@@ -85,112 +101,86 @@ public sealed class OcppGateway(
         };
     }
 
-    private async Task<object> BootAsync(CsmsDbContext db, Station? station, DateTimeOffset now, CancellationToken cancellationToken)
+    private async Task<object> BootAsync(
+        IServiceProvider services,
+        string chargePointId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
     {
-        var interval = options.Value.HeartbeatIntervalSeconds;
-        if (station is null)
-        {
-            // The operator registered no station for this identity; the charge point retries after a fix.
-            return new BootNotificationResponse(OcppRegistrationStatus.Rejected, now, interval);
-        }
-
-        station.MarkSeen(now);
-        await db.SaveChangesAsync(cancellationToken);
-        return new BootNotificationResponse(OcppRegistrationStatus.Accepted, now, interval);
+        var seen = await services.GetRequiredService<StationSeen>().RecordAsync(chargePointId, cancellationToken);
+        // The operator registered no station for this identity; the charge point retries after a fix.
+        var status = seen is StationSeenRecorded
+            ? OcppRegistrationStatus.Accepted
+            : OcppRegistrationStatus.Rejected;
+        return new BootNotificationResponse(status, now, options.Value.HeartbeatIntervalSeconds);
     }
 
-    private static async Task<object> HeartbeatAsync(CsmsDbContext db, Station station, DateTimeOffset now, CancellationToken cancellationToken)
+    private static async Task<object> HeartbeatAsync(
+        IServiceProvider services,
+        Station station,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
     {
-        station.MarkSeen(now);
-        await db.SaveChangesAsync(cancellationToken);
+        await services.GetRequiredService<StationSeen>().RecordAsync(station.ChargePointId, cancellationToken);
         return new HeartbeatResponse(now);
     }
 
     private static async Task<object> StatusAsync(
-        CsmsDbContext db,
+        IServiceProvider services,
         Station station,
         StatusNotificationRequest request,
-        DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        if (request.ConnectorId < 0 || request.ConnectorId > station.ConnectorCount)
-        {
-            throw OutsideTheStation(station, request.ConnectorId);
-        }
-
-        var connector = await db.Connectors.FirstOrDefaultAsync(
-            candidate => candidate.StationId == station.Id && candidate.ConnectorId == request.ConnectorId,
+        var outcome = await services.GetRequiredService<ConnectorStatusReport>().ReportAsync(
+            station,
+            request.ConnectorId,
+            OcppTranslator.ToDomain(request.Status),
+            OcppTranslator.ToDomain(request.ErrorCode),
             cancellationToken);
-        if (connector is null)
+        return outcome switch
         {
-            db.Connectors.Add(Connector.Report(station.Id, request.ConnectorId, request.Status, request.ErrorCode, now));
-        }
-        else
-        {
-            connector.Update(request.Status, request.ErrorCode, now);
-        }
-
-        station.MarkSeen(now);
-        await db.SaveChangesAsync(cancellationToken);
-        return new StatusNotificationResponse();
+            ConnectorStatusRecorded => new StatusNotificationResponse(),
+            ConnectorOutsideStation outside => throw OutsideTheStation(outside.Station, outside.ConnectorId),
+            _ => throw new InvalidOperationException("Unhandled connector status outcome.")
+        };
     }
 
     private static async Task<object> StartTransactionAsync(
-        CsmsDbContext db,
+        IServiceProvider services,
         Station station,
         StartTransactionRequest request,
-        DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        if (request.ConnectorId < 1 || request.ConnectorId > station.ConnectorCount)
-        {
-            throw OutsideTheStation(station, request.ConnectorId);
-        }
-
-        if (string.IsNullOrWhiteSpace(request.IdTag))
-        {
-            return new StartTransactionResponse(0, new IdTagInfo(OcppAuthorizationStatus.Invalid));
-        }
-
-        var open = await db.Sessions.FirstOrDefaultAsync(
-            candidate => candidate.StationId == station.Id
-                && candidate.ConnectorId == request.ConnectorId
-                && candidate.EndedAtUtc == null,
+        var outcome = await services.GetRequiredService<TransactionStart>().StartAsync(
+            station,
+            request.ConnectorId,
+            request.IdTag,
+            OcppEnergy.WattHoursToKwh(request.MeterStart),
             cancellationToken);
-        if (open is not null)
+        return outcome switch
         {
+            TransactionStarted started => new StartTransactionResponse(
+                started.Session.TransactionId,
+                new IdTagInfo(OcppAuthorizationStatus.Accepted)),
+            TransactionIdTagInvalid => new StartTransactionResponse(
+                0,
+                new IdTagInfo(OcppAuthorizationStatus.Invalid)),
             // The connector is already charging; the CSMS points at the running transaction, as OCPP says.
-            return new StartTransactionResponse(open.TransactionId, new IdTagInfo(OcppAuthorizationStatus.ConcurrentTx));
-        }
-
-        ChargingSession session;
-        try
-        {
-            // The connector's register at plug-in is this session's baseline: a second session on the
-            // same connector bills only what it adds on top, not the register it started from.
-            session = ChargingSession.Start(
-                station.TenantId,
-                station.Id,
-                request.ConnectorId,
-                now,
-                request.MeterStart / 1000m);
-        }
-        catch (ArgumentOutOfRangeException exception)
-        {
-            throw new OcppCallException(OcppErrorCodes.PropertyConstraintViolation, exception.Message);
-        }
-
-        db.Sessions.Add(session);
-        station.MarkSeen(now);
-        await db.SaveChangesAsync(cancellationToken);
-        return new StartTransactionResponse(session.TransactionId, new IdTagInfo(OcppAuthorizationStatus.Accepted));
+            TransactionConcurrent concurrent => new StartTransactionResponse(
+                concurrent.Session.TransactionId,
+                new IdTagInfo(OcppAuthorizationStatus.ConcurrentTx)),
+            TransactionConnectorOutsideStation outside => throw OutsideTheStation(outside.Station, outside.ConnectorId),
+            TransactionStartRejected rejected => throw new OcppCallException(
+                OcppErrorCodes.PropertyConstraintViolation,
+                rejected.Message),
+            _ => throw new InvalidOperationException("Unhandled transaction start outcome.")
+        };
     }
 
     private static async Task<object> MeterValuesAsync(
-        CsmsDbContext db,
+        IServiceProvider services,
         Station station,
         MeterValuesRequest request,
-        DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         if (request.TransactionId is not { } transactionId)
@@ -198,34 +188,32 @@ public sealed class OcppGateway(
             throw new OcppCallException(OcppErrorCodes.FormationViolation, "MeterValues needs the transaction id it belongs to.");
         }
 
-        var session = await FindSessionAsync(db, station, transactionId, cancellationToken);
-        if (!session.IsOpen)
-        {
-            throw new OcppCallException(OcppErrorCodes.InternalError, $"Transaction {transactionId} has already ended.");
-        }
-
+        // The frame carries the connector's cumulative register; the session bills the part above
+        // its own start reading.
         var readingKwh = OcppEnergy.ReadKwh(request.MeterValue);
-        try
+        var outcome = await services.GetRequiredService<TransactionMeterValues>().RecordAsync(
+            station,
+            transactionId,
+            readingKwh,
+            cancellationToken);
+        return outcome switch
         {
-            // The frame carries the connector's cumulative register; the session bills the part above
-            // its own start reading.
-            session.RecordMeter(now, readingKwh);
-        }
-        catch (ArgumentOutOfRangeException exception)
-        {
-            throw new OcppCallException(OcppErrorCodes.PropertyConstraintViolation, exception.Message);
-        }
-
-        await db.SaveChangesAsync(cancellationToken);
-        return new MeterValuesResponse();
+            MeterValuesRecorded => new MeterValuesResponse(),
+            MeterValuesTransactionMissing missing => throw MissingTransaction(missing.Station, missing.TransactionId),
+            MeterValuesTransactionEnded ended => throw new OcppCallException(
+                OcppErrorCodes.InternalError,
+                $"Transaction {ended.Session.TransactionId} has already ended."),
+            MeterValuesRejected rejected => throw new OcppCallException(
+                OcppErrorCodes.PropertyConstraintViolation,
+                rejected.Message),
+            _ => throw new InvalidOperationException("Unhandled meter values outcome.")
+        };
     }
 
-    private async Task<object> StopTransactionAsync(
-        CsmsDbContext db,
-        IEventPublisher publisher,
+    private static async Task<object> StopTransactionAsync(
+        IServiceProvider services,
         Station station,
         StopTransactionRequest request,
-        DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         if (request.TransactionId is not { } transactionId)
@@ -233,60 +221,37 @@ public sealed class OcppGateway(
             throw new OcppCallException(OcppErrorCodes.FormationViolation, "StopTransaction needs the transaction id it ends.");
         }
 
-        var session = await FindSessionAsync(db, station, transactionId, cancellationToken);
-        if (session.IsOpen)
+        var outcome = await services.GetRequiredService<TransactionStop>().StopAsync(
+            station,
+            transactionId,
+            OcppEnergy.WattHoursToKwh(request.MeterStop),
+            cancellationToken);
+        return outcome switch
         {
-            // Only a stop reading above the last recorded register adds energy; a stop below it keeps
-            // the session's last reading, exactly like a late MeterValues would.
-            if (request.MeterStop / 1000m > session.LastReadingKwh)
-            {
-                try
-                {
-                    session.RecordMeter(now, request.MeterStop / 1000m);
-                }
-                catch (ArgumentOutOfRangeException exception)
-                {
-                    throw new OcppCallException(OcppErrorCodes.PropertyConstraintViolation, exception.Message);
-                }
-            }
-
-            try
-            {
-                await SessionEnding.EndAsync(db, session, now, cancellationToken);
-            }
-            catch (ArgumentException exception)
-            {
-                throw new OcppCallException(OcppErrorCodes.PropertyConstraintViolation, exception.Message);
-            }
-            catch (InvalidOperationException exception)
-            {
-                throw new OcppCallException(OcppErrorCodes.InternalError, exception.Message);
-            }
-
-            await SessionEnding.PublishAsync(publisher, session, cancellationToken);
-        }
-
-        // A stop transaction for a session that is already ended is answered, not processed twice: the
-        // charge point that lost the connection may resend it.
-        return new StopTransactionResponse(new IdTagInfo(OcppAuthorizationStatus.Accepted));
+            TransactionStopped => new StopTransactionResponse(new IdTagInfo(OcppAuthorizationStatus.Accepted)),
+            // A stop transaction for a session that is already ended is answered, not processed twice.
+            TransactionStopAlreadyEnded => new StopTransactionResponse(new IdTagInfo(OcppAuthorizationStatus.Accepted)),
+            TransactionStopMissing missing => throw MissingTransaction(missing.Station, missing.TransactionId),
+            StopReadingRejected rejected => throw new OcppCallException(
+                OcppErrorCodes.PropertyConstraintViolation,
+                rejected.Message),
+            StopOperationRejected rejected => throw new OcppCallException(
+                OcppErrorCodes.InternalError,
+                rejected.Message),
+            _ => throw new InvalidOperationException("Unhandled stop transaction outcome.")
+        };
     }
 
-    private static async Task<ChargingSession> FindSessionAsync(
-        CsmsDbContext db,
-        Station station,
-        int transactionId,
-        CancellationToken cancellationToken)
-        => await db.Sessions.FirstOrDefaultAsync(
-            candidate => candidate.TransactionId == transactionId && candidate.StationId == station.Id,
-            cancellationToken)
-            ?? throw new OcppCallException(
-                OcppErrorCodes.InternalError,
-                $"Station '{station.Name}' has no transaction {transactionId}.");
+    private static OcppCallException MissingTransaction(Station station, int transactionId)
+        => new(OcppErrorCodes.InternalError, $"Station '{station.Name}' has no transaction {transactionId}.");
 
     private static T Read<T>(OcppCall call) => OcppJson.ReadPayload<T>(call.Payload);
 
     private static Station Require(Station? station, string chargePointId)
-        => station ?? throw new OcppCallException(
+        => station ?? throw NoStation(chargePointId);
+
+    private static OcppCallException NoStation(string chargePointId)
+        => new(
             OcppErrorCodes.InternalError,
             $"No station is registered for charge point '{chargePointId}'; register it over the API first.");
 

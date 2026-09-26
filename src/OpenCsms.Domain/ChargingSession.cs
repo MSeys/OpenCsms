@@ -97,7 +97,7 @@ public sealed class ChargingSession
     /// Records a cumulative meter reading. Readings must not move backwards in time or energy, must not
     /// fall below the session's start reading, and the device is allowed to repeat the same total.
     /// </summary>
-    public void RecordMeter(DateTimeOffset atUtc, decimal totalKwh)
+    public void AddMeterValue(DateTimeOffset atUtc, decimal totalKwh)
     {
         EnsureOpen("Meter values cannot arrive after the stop transaction.");
         if (totalKwh < MeterStartKwh)
@@ -122,15 +122,25 @@ public sealed class ChargingSession
         LastMeterAtUtc = atUtc;
     }
 
-    public void End(DateTimeOffset atUtc)
+    /// <summary>
+    /// Ends the session at the given instant. A duplicate stop is a no-op and reports false: a charge
+    /// point that lost the answer to its first stop may resend it, and the session keeps the instant
+    /// it first ended at.
+    /// </summary>
+    public bool Stop(DateTimeOffset atUtc)
     {
-        EnsureOpen("The session has already ended.");
+        if (!IsOpen)
+        {
+            return false;
+        }
+
         if (atUtc < LastMeterAtUtc)
         {
             throw new ArgumentOutOfRangeException(nameof(atUtc), atUtc, "A session cannot end before its last meter value.");
         }
 
         EndedAtUtc = atUtc;
+        return true;
     }
 
     private void EnsureOpen(string message)

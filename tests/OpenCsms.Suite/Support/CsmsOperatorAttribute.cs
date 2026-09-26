@@ -1,7 +1,7 @@
 namespace OpenCsms.Suite.Support;
 
 using System.Net;
-using OpenCsms.Api;
+using OpenCsms.Contracts;
 using OpenCsms.Domain;
 using ProtoTest.Core;
 using ProtoTest.Rest;

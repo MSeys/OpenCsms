@@ -2,7 +2,7 @@ namespace OpenCsms.Suite.Messaging;
 
 using Microsoft.Extensions.Configuration;
 using OpenCsms.Contracts;
-using OpenCsms.Messaging;
+using OpenCsms.Infrastructure.Messaging;
 using OpenCsms.Suite.Support;
 using ProtoTest.Core;
 using ProtoTest.Messaging;
@@ -10,7 +10,7 @@ using ProtoTest.NUnit;
 using RabbitMQ.Client;
 
 /// <summary>
-/// R1a-03: the publisher must not cache a channel the broker closed. The test publishes once, closes
+/// The publisher must not cache a channel the broker closed. The test publishes once, closes
 /// the connection out from under the publisher the way a broker restart would, publishes again and
 /// asserts the second message arrived over a fresh connection. It owns its connection and routing key,
 /// so it runs alongside the suite's other broker tests.

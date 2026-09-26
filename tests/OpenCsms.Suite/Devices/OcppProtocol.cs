@@ -1,6 +1,6 @@
 namespace OpenCsms.Suite.Devices;
 
-using OpenCsms.Domain.Ocpp;
+using OpenCsms.Protocol.Ocpp;
 using ProtoTest.Devices;
 
 /// <summary>

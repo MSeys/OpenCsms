@@ -57,4 +57,44 @@ public sealed class Station
 
     /// <summary>Records that the charge point is alive, from a boot notification or a heartbeat.</summary>
     public void MarkSeen(DateTimeOffset atUtc) => LastSeenAtUtc = atUtc;
+
+    /// <summary>Whether the connector number is one the station reports on: 0 is the charge point itself.</summary>
+    public bool CanReportStatus(int connectorId) => connectorId >= 0 && connectorId <= ConnectorCount;
+
+    /// <summary>Whether the connector number can carry a transaction: connectors are numbered from one.</summary>
+    public bool CanServeTransaction(int connectorId) => connectorId >= 1 && connectorId <= ConnectorCount;
+
+    /// <summary>
+    /// Applies a status notification: the station owns which connector numbers exist, so an existing
+    /// connector of this station is updated and a missing one is created. The connector is a stored row
+    /// of its own; the caller loads it and passes it in so the aggregate stays persistence-free.
+    /// </summary>
+    public Connector UpsertConnector(
+        Connector? connector,
+        int connectorId,
+        ConnectorStatus status,
+        ConnectorErrorCode errorCode,
+        DateTimeOffset atUtc)
+    {
+        if (!CanReportStatus(connectorId))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(connectorId),
+                connectorId,
+                $"Station '{Name}' has {ConnectorCount} connector(s).");
+        }
+
+        if (connector is not null && connector.StationId != Id)
+        {
+            throw new ArgumentException("The connector belongs to another station.", nameof(connector));
+        }
+
+        if (connector is null)
+        {
+            return Connector.Report(Id, connectorId, status, errorCode, atUtc);
+        }
+
+        connector.Update(status, errorCode, atUtc);
+        return connector;
+    }
 }

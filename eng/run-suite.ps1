@@ -5,9 +5,9 @@ param(
     [string]$Mode
 )
 
-# One command, one log: the suite's two modes are M1's evidence, so each run writes
+# One command, one log: the suite's two modes are its evidence, so each run writes
 # artifacts/gates/opencsms-<mode>-<timestamp>.log the way ProtoTest's verify.ps1 writes its gate
-# records, and a plan row can cite a file instead of prose (R1a-05). The mode names the evidence;
+# records, so a result can cite a file instead of prose. The mode names the evidence;
 # the environment decides which containers the suite skips.
 
 $ErrorActionPreference = "Stop"

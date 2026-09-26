@@ -1,8 +1,9 @@
 namespace OpenCsms.Api.Ocpp;
 
 /// <summary>
-/// The OCPP gateway's settings. The heartbeat interval is what the CSMS asks a booting charge point to
-/// use; the remote-call timeout bounds how long an operator action waits for the device's answer.
+/// The OCPP gateway's settings: the heartbeat interval is what the CSMS asks a booting charge point
+/// to use. The operator commands' remote-call timeout is the application's own setting; both are read
+/// from the same <c>Ocpp</c> section by the composition root.
 /// </summary>
 public sealed class OcppGatewayOptions
 {
@@ -10,7 +11,4 @@ public sealed class OcppGatewayOptions
 
     /// <summary>Seconds between heartbeats the CSMS asks for, as in BootNotification.conf.</summary>
     public int HeartbeatIntervalSeconds { get; set; } = 300;
-
-    /// <summary>How long a server-initiated call waits for the charge point's answer.</summary>
-    public int RemoteCallTimeoutSeconds { get; set; } = 10;
 }

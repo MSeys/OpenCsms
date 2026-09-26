@@ -1,11 +1,12 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/OpenCsms.Api/OpenCsms.Api.csproj" />
+    <Project Path="src/OpenCsms.Application/OpenCsms.Application.csproj" />
     <Project Path="src/OpenCsms.Billing.Worker/OpenCsms.Billing.Worker.csproj" />
     <Project Path="src/OpenCsms.Contracts/OpenCsms.Contracts.csproj" />
-    <Project Path="src/OpenCsms.Data/OpenCsms.Data.csproj" />
     <Project Path="src/OpenCsms.Domain/OpenCsms.Domain.csproj" />
-    <Project Path="src/OpenCsms.Messaging/OpenCsms.Messaging.csproj" />
+    <Project Path="src/OpenCsms.Infrastructure/OpenCsms.Infrastructure.csproj" />
+    <Project Path="src/OpenCsms.Protocol.Ocpp/OpenCsms.Protocol.Ocpp.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/OpenCsms.Domain.Tests/OpenCsms.Domain.Tests.csproj" />

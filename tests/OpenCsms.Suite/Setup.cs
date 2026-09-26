@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using OpenCsms.Api;
 using OpenCsms.Contracts;
-using OpenCsms.Data;
+using OpenCsms.Infrastructure;
 using OpenCsms.Suite.Devices;
 using OpenCsms.Suite.Support;
 using ProtoTest.AspNetCore;
@@ -42,14 +42,14 @@ public sealed class Setup : ProtoTestAssembly
 
         builder
             // Time is a setting here too: the whole run lives at one instant, so the worker's
-            // timestamps can be asserted and a product that reads the machine clock fails (R1a-04).
+            // timestamps can be asserted and a product that reads the machine clock fails.
             .ConfigureClock(SuiteClock.Seed())
             .ConfigureTracing(trace => trace.OutputPath = Path.Combine("TestResults", "OpenCsms", "opencsms.prototrace"))
             .ConfigureAppConfiguration(configuration => configuration
                 // The mode switch: an environment that exports the declared keys (the README's recipe)
                 // makes the containers below skip, so one Setup serves both modes.
                 .AddEnvironmentVariables())
-            .AddInfrastructure(PostgresDatabase.Container(), CsmsDataExtensions.ConnectionStringKey)
+            .AddInfrastructure(PostgresDatabase.Container(), CsmsInfrastructureExtensions.ConnectionStringKey)
             .AddInfrastructure(
                 RabbitMqBroker.Container(),
                 RabbitMqOptions.ConnectionStringSetting,

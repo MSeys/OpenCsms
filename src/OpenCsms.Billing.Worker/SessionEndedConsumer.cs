@@ -2,31 +2,28 @@ namespace OpenCsms.Billing.Worker;
 
 using System.Text;
 using System.Text.Json;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using OpenCsms.Application.Billing;
 using OpenCsms.Contracts;
-using OpenCsms.Data;
-using OpenCsms.Domain;
-using OpenCsms.Messaging;
+using OpenCsms.Infrastructure.Messaging;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
 /// <summary>
-/// Consumes <c>session.ended</c> and stores an invoice. Retries run in-process (republish with a
-/// retries header, then acknowledge), and a message that still fails after <see cref="MaxRetries"/>
-/// retries - that is, on its fourth attempt - is dead-lettered through the queue's
-/// <c>x-dead-letter-exchange</c>, so the worker never spins on a poisonous message. The unique session
-/// index makes storing idempotent; publishing <c>invoice.issued</c> is mandatory on every delivery,
-/// including a redelivery, and a failed publish fails the handler so the retry path sees it. The
-/// invoice is stamped with the run's clock, not the machine's.
+/// Consumes <c>session.ended</c> and hands each delivery to the application's billing use case,
+/// <see cref="InvoiceIssuance"/>. The consumer owns the transport: retries run in-process (republish
+/// with a retries header, then acknowledge), and a message that still fails after
+/// <see cref="MaxRetries"/> retries - that is, on its fourth attempt - is dead-lettered through the
+/// queue's <c>x-dead-letter-exchange</c>, so the worker never spins on a poisonous message. What
+/// billing means, and which failures are retryable, is the use case's; the unique session index there
+/// makes storing idempotent.
 /// </summary>
 public sealed class SessionEndedConsumer(
     IServiceScopeFactory scopeFactory,
     IConfiguration configuration,
-    TimeProvider timeProvider,
     ILogger<SessionEndedConsumer> logger) : BackgroundService
 {
     private const int MaxRetries = 3;
@@ -111,45 +108,8 @@ public sealed class SessionEndedConsumer(
         var message = JsonSerializer.Deserialize<SessionEnded>(args.Body.Span, JsonOptions)
             ?? throw new InvalidOperationException("The session.ended payload is empty.");
         await using var scope = scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<CsmsDbContext>();
-        var invoice = await db.Invoices.FirstOrDefaultAsync(
-            candidate => candidate.SessionId == message.SessionId,
-            cancellationToken);
-        if (invoice is null)
-        {
-            var session = await db.Sessions.FirstOrDefaultAsync(candidate => candidate.Id == message.SessionId, cancellationToken)
-                ?? throw new InvalidOperationException($"Session '{message.SessionId}' is not in the store.");
-            var station = await db.Stations.FirstOrDefaultAsync(candidate => candidate.Id == session.StationId, cancellationToken)
-                ?? throw new InvalidOperationException($"Station '{session.StationId}' is not in the store.");
-            var tariff = await db.Tariffs.FirstOrDefaultAsync(candidate => candidate.Id == station.TariffId, cancellationToken)
-                ?? throw new InvalidOperationException($"Tariff '{station.TariffId}' is not in the store.");
-
-            invoice = InvoiceCalculator.Calculate(session, tariff, timeProvider.GetUtcNow());
-            db.Invoices.Add(invoice);
-            await db.SaveChangesAsync(cancellationToken);
-            logger.LogInformation("Billed session '{SessionId}' as invoice '{InvoiceId}'.", session.Id, invoice.Id);
-        }
-        else
-        {
-            logger.LogInformation(
-                "Session '{SessionId}' already has invoice '{InvoiceId}'; republishing.",
-                message.SessionId,
-                invoice.Id);
-        }
-
-        // Always publish: the event is the contract, and an exception here must reach the retry path
-        // rather than being swallowed, so a redelivery republishes the same invoice.
-        var publisher = scope.ServiceProvider.GetRequiredService<IEventPublisher>();
-        await publisher.PublishAsync(
-            CsmsEvents.InvoiceIssuedRoutingKey,
-            new InvoiceIssued(
-                invoice.Id,
-                invoice.SessionId,
-                invoice.TenantId,
-                invoice.Total,
-                invoice.Currency,
-                invoice.IssuedAtUtc),
-            cancellationToken);
+        var issuance = scope.ServiceProvider.GetRequiredService<InvoiceIssuance>();
+        await issuance.IssueAsync(message, cancellationToken);
     }
 
     private async Task RepublishAsync(BasicDeliverEventArgs args, int retries, CancellationToken cancellationToken)

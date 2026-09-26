@@ -4,7 +4,8 @@ using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
-using OpenCsms.Domain.Ocpp;
+using OpenCsms.Application.Ports;
+using OpenCsms.Protocol.Ocpp;
 
 /// <summary>An OCPP call this gateway can answer with a call error instead of a result.</summary>
 public sealed class OcppCallException(string errorCode, string description) : Exception(description)
@@ -19,7 +20,7 @@ public sealed class OcppCallException(string errorCode, string description) : Ex
 /// pending <see cref="CallAsync"/> that is waiting for them. One connection is one conversation - the
 /// send gate serializes frames, and the pending table correlates server calls by message id.
 /// </summary>
-public sealed class ChargePointConnection(string chargePointId, WebSocket socket) : IAsyncDisposable
+public sealed class ChargePointConnection(string chargePointId, WebSocket socket) : IAsyncDisposable, IChargePointConnection
 {
     private readonly SemaphoreSlim _sendGate = new(1, 1);
     private readonly ConcurrentDictionary<string, TaskCompletionSource<OcppMessage>> _pending = new(StringComparer.Ordinal);
@@ -65,7 +66,7 @@ public sealed class ChargePointConnection(string chargePointId, WebSocket socket
     /// Sends a server-initiated call and waits for the charge point's result. A call error and a shape
     /// that cannot be read both throw, so the operator sees the device's own answer.
     /// </summary>
-    public async Task<T> CallAsync<T>(string action, object payload, TimeSpan timeout, CancellationToken cancellationToken)
+    private async Task<T> CallAsync<T>(string action, object payload, TimeSpan timeout, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(action);
         ArgumentNullException.ThrowIfNull(payload);
@@ -91,7 +92,7 @@ public sealed class ChargePointConnection(string chargePointId, WebSocket socket
             return answer switch
             {
                 OcppCallResult result => OcppJson.ReadPayload<T>(result.Payload),
-                OcppCallError error => throw new OcppCallException(
+                OcppCallError error => throw new ChargePointCallRefusedException(
                     error.ErrorCode,
                     $"The charge point '{ChargePointId}' refused {action}: {error.Description}"),
                 _ => throw new OcppProtocolException($"The answer to {action} was not a result or an error.")
@@ -101,6 +102,36 @@ public sealed class ChargePointConnection(string chargePointId, WebSocket socket
         {
             _pending.TryRemove(messageId, out _);
         }
+    }
+
+    /// <summary>Asks the charge point to start a transaction and reads its authorization decision.</summary>
+    public async Task<AuthorizationStatus> RemoteStartAsync(
+        string idTag,
+        int? connectorId,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(idTag);
+        var answer = await CallAsync<RemoteStartTransactionResponse>(
+            OcppActions.RemoteStartTransaction,
+            new RemoteStartTransactionRequest(idTag, connectorId),
+            timeout,
+            cancellationToken);
+        return OcppTranslator.ToAuthorization(answer.IdTagInfo.Status);
+    }
+
+    /// <summary>Asks the charge point to stop the named transaction and reads its authorization decision.</summary>
+    public async Task<AuthorizationStatus> RemoteStopAsync(
+        int transactionId,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        var answer = await CallAsync<RemoteStopTransactionResponse>(
+            OcppActions.RemoteStopTransaction,
+            new RemoteStopTransactionRequest(transactionId),
+            timeout,
+            cancellationToken);
+        return OcppTranslator.ToAuthorization(answer.IdTagInfo.Status);
     }
 
     /// <summary>Closes the socket politely; a charge point that is already gone needs no reason.</summary>

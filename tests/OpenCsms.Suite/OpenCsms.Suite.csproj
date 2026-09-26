@@ -41,10 +41,10 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenCsms.Api\OpenCsms.Api.csproj" />
     <ProjectReference Include="..\..\src\OpenCsms.Billing.Worker\OpenCsms.Billing.Worker.csproj" />
-    <ProjectReference Include="..\..\src\OpenCsms.Data\OpenCsms.Data.csproj" />
+    <ProjectReference Include="..\..\src\OpenCsms.Infrastructure\OpenCsms.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\OpenCsms.Contracts\OpenCsms.Contracts.csproj" />
     <ProjectReference Include="..\..\src\OpenCsms.Domain\OpenCsms.Domain.csproj" />
-    <ProjectReference Include="..\..\src\OpenCsms.Messaging\OpenCsms.Messaging.csproj" />
+    <ProjectReference Include="..\..\src\OpenCsms.Protocol.Ocpp\OpenCsms.Protocol.Ocpp.csproj" />
   </ItemGroup>
 
 </Project>

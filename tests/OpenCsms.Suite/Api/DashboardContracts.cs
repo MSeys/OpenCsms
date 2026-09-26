@@ -1,7 +1,7 @@
 namespace OpenCsms.Suite.Api;
 
 using System.Net;
-using OpenCsms.Api;
+using OpenCsms.Contracts;
 using OpenCsms.Domain;
 using OpenCsms.Suite.Support;
 using ProtoTest.Core;
@@ -14,7 +14,7 @@ using ProtoTest.Rest;
 /// commands distinguish the two roles - a viewer is refused (403) before anything reaches a charge
 /// point, and the operator reaches the device path (409, because the provisioned charge point is not
 /// connected). The cookie is what carries the role; the suite signs in through the product's own
-/// endpoint, exactly as the SPA does. The multi-tenancy negative test is R3.2's.
+/// endpoint, exactly as the SPA does.
 /// </summary>
 [Application(CsmsTargets.Api)]
 public sealed class DashboardContracts
@@ -103,7 +103,7 @@ public sealed class DashboardContracts
             .PostAsync($"/api/dashboard/stations/{op.StationId}/remote-start");
 
         // The station belongs to the signed-in operator, so the role check passed and the product's
-        // own device path answered: this charge point is not connected (R2.4's 409).
+        // own device path answered: the charge point is not connected, which is a 409.
         response.Should.HaveHttpStatus(HttpStatusCode.Conflict);
     }
 

@@ -2,7 +2,6 @@ namespace OpenCsms.Suite.Billing;
 
 using System.Net;
 using System.Text.Json;
-using OpenCsms.Api;
 using OpenCsms.Contracts;
 using OpenCsms.Suite.Support;
 using ProtoTest.Core;
@@ -12,7 +11,7 @@ using ProtoTest.Rest;
 using BillingWorker = OpenCsms.Billing.Worker.Program;
 
 /// <summary>
-/// R1a-01: a redelivered <c>session.ended</c> must republish <c>invoice.issued</c> for the same
+/// A redelivered <c>session.ended</c> must republish <c>invoice.issued</c> for the same
 /// invoice, and must not store a second invoice. The test runs the journey's setup path once, then
 /// publishes the product's own payload on the product's exchange and routing key again and asserts the
 /// event arrives a second time with the same invoice id while the store still holds one invoice row.

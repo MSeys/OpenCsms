@@ -1,7 +1,7 @@
 namespace OpenCsms.Domain.Tests;
 
 using System.Text.Json;
-using OpenCsms.Domain.Ocpp;
+using OpenCsms.Protocol.Ocpp;
 
 [TestFixture]
 public sealed class OcppProtocolTests

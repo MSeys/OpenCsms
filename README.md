@@ -26,12 +26,13 @@ seen; the framework gap that remains (the worker's `Program.Main`) is in the gap
 
 ## Status
 
-M1 and M2 are done, and M3's first stage (R3.1) is in: the operator dashboard's shell, the product's
-sign-in and roles, and the two browser journeys. The OCPP 1.6J gateway, the charge-point simulator's
-journey surface and the device-fit proof are in (R2.1/R2.2), including the idle-fee journeys that
-advance the injected test clock instead of sleeping, and the error paths — a duplicate
-StopTransaction, malformed MeterValues, an unknown charge point, out-of-subset actions and
-out-of-range connectors — are pinned with the OCPP error each one answers with (R2.3). The remote
+M1 and M2 are done, and M3 is underway: R3.0's layering is in (below) and R3.1 added the operator
+dashboard's shell, the product's sign-in and roles, and the two browser journeys. The OCPP 1.6J
+gateway, the charge-point simulator's journey surface and the device-fit proof are in (R2.1/R2.2),
+including the idle-fee journeys that advance the injected test clock instead of sleeping, and the
+error paths — a duplicate StopTransaction, malformed MeterValues, an unknown charge point,
+out-of-subset actions and out-of-range connectors — are pinned with the OCPP error each one answers
+with (R2.3). The remote
 endpoints' failure branches are pinned too (R2.4): an offline charge point is `409`, a device that
 refuses the call is `502`, no answer within the configured timeout is `504`, and a device's own
 authorization decision (for example `Blocked`) is the `200` body's status, not a failure. The
@@ -44,20 +45,42 @@ database (`opencsms-configured-20260926-205124.log` and `opencsms-configured-202
 the Setup is the same code either way. The milestones below are the ones in the
 [reference demo brief](https://github.com/MSeys/ProtoTest) — this README tracks them honestly.
 
+**Layering (R3.0).** The solution is concentric layers, and a project depends only inward:
+`Domain` ← `Application` ← `Infrastructure` / `Protocol.Ocpp` / `Api` / `Worker`, with `Contracts`
+on the side.
+
+| Project | Owns |
+| --- | --- |
+| `src/OpenCsms.Domain` | Aggregates, value objects and invariants; no EF, HTTP or JSON. |
+| `src/OpenCsms.Application` | The use cases, over narrow persistence, event and clock ports; no infrastructure. |
+| `src/OpenCsms.Contracts` | The integration events and the API's request/response DTOs; no project references. |
+| `src/OpenCsms.Infrastructure` | The EF `DbContext` with its fluent configurations, migrations and stores, and the RabbitMQ publisher and topology. |
+| `src/OpenCsms.Protocol.Ocpp` | The OCPP 1.6J wire format, translated to application commands. |
+| `src/OpenCsms.Api`, `src/OpenCsms.Billing.Worker` | Thin composition roots: they bind requests and deliveries and map answers, status codes and DTOs. |
+
+The sub-stages landed in order, each gated and behavior-preserving: **R3.0a** extracted the
+application layer (`d23ec58`), **R3.0b** merged persistence and messaging into infrastructure
+(`a910381`), **R3.0c** extracted the protocol and gave the aggregates their operations (`3cafbf7`),
+and **R3.0d** moved the API's DTOs to `OpenCsms.Contracts`, with the mapping from the domain left in
+the API. Behavior, endpoints, DTO shapes, status codes, events, schema and OCPP semantics are
+unchanged; the suite passes unchanged (41/41 twice on fresh containers:
+`artifacts/gates/opencsms-container-20260926-220015.log` and
+`artifacts/gates/opencsms-container-20260926-220049.log`; domain 48/48).
+
 [COVERAGE.md](COVERAGE.md) records what the suite asserts today and the areas that are still
 untested.
 
 - [x] M1 — CSMS API + PostgreSQL + billing worker + REST suite + one journey
 - [x] M2 — OCPP gateway + charge-point simulator + idle-fee journey
-- [ ] M3 — dashboard + monthly export + browser journeys (R3.1: shell, roles and browser wiring)
+- [ ] M3 — dashboard + monthly export + browser journeys (R3.0a–d: layering; R3.1: shell, roles and browser wiring)
 - [ ] M4 — container topology + deployed mode + fault injection + nightly CI
 
 ## OCPP 1.6J subset
 
 The gateway speaks OCPP 1.6J over one WebSocket per charge point at `/ocpp/{chargePointId}`. The JSON
 framing is `[2, id, action, payload]` for a call, `[3, id, payload]` for a call result and
-`[4, id, code, description, details]` for a call error — the contract lives in
-`src/OpenCsms.Domain/Ocpp`, shared by the gateway and the simulator. This is the whole subset:
+`[4, id, code, description, details]` for a call error — the framing contract lives in
+`src/OpenCsms.Protocol.Ocpp`, shared by the gateway and the simulator. This is the whole subset:
 
 | Message | Direction | What the CSMS does | Suite |
 | --- | --- | --- | --- |

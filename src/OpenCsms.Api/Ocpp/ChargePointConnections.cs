@@ -2,21 +2,31 @@ namespace OpenCsms.Api.Ocpp;
 
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
+using OpenCsms.Application.Ports;
 
 /// <summary>
 /// The charge points that are connected right now, keyed by their OCPP identity. The gateway adds a
-/// connection while its socket lives; the operator-facing endpoints look one up to start a
-/// server-initiated call. A charge point that reconnects replaces its old connection, which is closed.
+/// connection while its socket lives; the application's operator commands reach one through
+/// <see cref="IChargePointConnections"/>, so the registry stays a transport concern with a narrow
+/// port. A charge point that reconnects replaces its old connection, which is closed.
 /// </summary>
-public sealed class ChargePointConnections
+public sealed class ChargePointConnections : IChargePointConnections
 {
     private readonly ConcurrentDictionary<string, ChargePointConnection> _connections =
         new(StringComparer.Ordinal);
 
-    public bool TryGet(string chargePointId, [NotNullWhen(true)] out ChargePointConnection? connection)
+    /// <inheritdoc />
+    public bool TryGet(string chargePointId, [NotNullWhen(true)] out IChargePointConnection? connection)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(chargePointId);
-        return _connections.TryGetValue(chargePointId, out connection);
+        if (_connections.TryGetValue(chargePointId, out var found))
+        {
+            connection = found;
+            return true;
+        }
+
+        connection = null;
+        return false;
     }
 
     /// <summary>Registers a connection; whatever was connected before for this charge point is closed.</summary>

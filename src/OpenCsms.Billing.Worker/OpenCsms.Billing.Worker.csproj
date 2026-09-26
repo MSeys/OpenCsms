@@ -13,8 +13,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\OpenCsms.Data\OpenCsms.Data.csproj" />
+    <ProjectReference Include="..\OpenCsms.Infrastructure\OpenCsms.Infrastructure.csproj" />
+    <ProjectReference Include="..\OpenCsms.Application\OpenCsms.Application.csproj" />
     <ProjectReference Include="..\OpenCsms.Contracts\OpenCsms.Contracts.csproj" />
-    <ProjectReference Include="..\OpenCsms.Messaging\OpenCsms.Messaging.csproj" />
   </ItemGroup>
 </Project>

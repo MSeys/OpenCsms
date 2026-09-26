@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenCsms.Domain\OpenCsms.Domain.csproj" />
+    <ProjectReference Include="..\..\src\OpenCsms.Protocol.Ocpp\OpenCsms.Protocol.Ocpp.csproj" />
   </ItemGroup>
 
 </Project>

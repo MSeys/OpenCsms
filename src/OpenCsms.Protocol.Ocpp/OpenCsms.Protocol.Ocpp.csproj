@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- The wire format translates to the application's commands and the domain's vocabulary; the
+         domain and the application never see this project. -->
+    <ProjectReference Include="..\OpenCsms.Application\OpenCsms.Application.csproj" />
+    <ProjectReference Include="..\OpenCsms.Domain\OpenCsms.Domain.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

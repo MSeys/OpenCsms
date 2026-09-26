@@ -2,7 +2,7 @@ namespace OpenCsms.Suite.Support;
 
 using System.Collections.Concurrent;
 using System.Text.Json;
-using OpenCsms.Messaging;
+using OpenCsms.Infrastructure.Messaging;
 using ProtoTest.Core;
 using ProtoTest.Messaging.RabbitMq;
 using RabbitMQ.Client;
@@ -132,7 +132,7 @@ public sealed class RabbitMqRawClient : IAsyncDisposable
             catch (AlreadyClosedException)
             {
                 // The connection died under the poll; cancelling has nothing left to do, and the
-                // real failure (for example the timeout above) must survive teardown (R1a-15).
+                // real failure (for example the timeout above) must survive teardown.
             }
         }
     }

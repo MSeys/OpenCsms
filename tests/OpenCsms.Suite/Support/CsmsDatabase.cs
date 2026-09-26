@@ -3,7 +3,8 @@ namespace OpenCsms.Suite.Support;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using OpenCsms.Data;
+using OpenCsms.Infrastructure;
+using OpenCsms.Infrastructure.Persistence;
 using ProtoTest.Core;
 
 /// <summary>
@@ -23,12 +24,12 @@ public static class CsmsDatabase
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                [CsmsDataExtensions.ConnectionStringKey] = ResolveConnectionString(context)
+                [CsmsInfrastructureExtensions.ConnectionStringKey] = ResolveConnectionString(context)
             })
             .Build();
         var services = new ServiceCollection();
         services.AddSingleton<IConfiguration>(configuration);
-        services.AddCsmsData();
+        services.AddCsmsInfrastructure();
         await using var provider = services.BuildServiceProvider();
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<CsmsDbContext>();
@@ -37,20 +38,20 @@ public static class CsmsDatabase
 
     private static string ResolveConnectionString(ProtoExecutionContext context)
     {
-        var configured = context.Configuration[CsmsDataExtensions.ConnectionStringKey];
+        var configured = context.Configuration[CsmsInfrastructureExtensions.ConnectionStringKey];
         if (!string.IsNullOrWhiteSpace(configured))
         {
             return configured;
         }
 
         if (context.TryService<ProtoInfrastructureSettings>() is { } settings
-            && settings.Values.TryGetValue(CsmsDataExtensions.ConnectionStringKey, out var provided))
+            && settings.Values.TryGetValue(CsmsInfrastructureExtensions.ConnectionStringKey, out var provided))
         {
             return provided;
         }
 
         throw new InvalidOperationException(
-            $"No database address is available. Set '{CsmsDataExtensions.ConnectionStringKey}' " +
+            $"No database address is available. Set '{CsmsInfrastructureExtensions.ConnectionStringKey}' " +
             "(a started PostgreSQL container does this).");
     }
 }

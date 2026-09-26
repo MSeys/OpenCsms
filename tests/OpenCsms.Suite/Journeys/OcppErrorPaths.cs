@@ -1,9 +1,8 @@
 namespace OpenCsms.Suite.Journeys;
 
 using System.Net;
-using OpenCsms.Api;
 using OpenCsms.Contracts;
-using OpenCsms.Domain.Ocpp;
+using OpenCsms.Protocol.Ocpp;
 using OpenCsms.Suite.Devices;
 using OpenCsms.Suite.Support;
 using ProtoTest.Core;
@@ -14,7 +13,7 @@ using ProtoTest.Rest;
 using BillingWorker = OpenCsms.Billing.Worker.Program;
 
 /// <summary>
-/// The M2 error paths, driven through the simulator exactly as the happy journeys are: a stop the
+/// The gateway error paths, driven through the simulator exactly as the happy journeys are: a stop the
 /// charge point resends is answered without ending or billing anything twice; meter values the
 /// gateway cannot read, or that move backwards, are refused with the OCPP error code their rule
 /// names and leave the session as it was; a charge point no station is registered for is rejected at

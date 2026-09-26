@@ -18,8 +18,8 @@ public sealed class InvoiceCalculatorTests
     {
         var session = ChargingSession.Start("acme", Guid.NewGuid(), 1, Start);
         var lastMeterAt = idleTail is null ? Start + duration : Start + duration - idleTail.Value;
-        session.RecordMeter(lastMeterAt, kwh);
-        session.End(Start + duration);
+        session.AddMeterValue(lastMeterAt, kwh);
+        session.Stop(Start + duration);
         return session;
     }
 
@@ -180,34 +180,34 @@ public sealed class InvoiceCalculatorTests
     }
 
     [Test]
-    public void RecordMeter_ShouldRejectARegressingReading()
+    public void AddMeterValue_ShouldRejectARegressingReading()
     {
         var session = ChargingSession.Start("acme", Guid.NewGuid(), 1, Start);
-        session.RecordMeter(Start + TimeSpan.FromMinutes(5), 5m);
+        session.AddMeterValue(Start + TimeSpan.FromMinutes(5), 5m);
 
         Assert.That(
-            () => session.RecordMeter(Start + TimeSpan.FromMinutes(10), 4.9m),
+            () => session.AddMeterValue(Start + TimeSpan.FromMinutes(10), 4.9m),
             Throws.TypeOf<ArgumentOutOfRangeException>().With.Property("ParamName").EqualTo("totalKwh"));
     }
 
     [Test]
-    public void RecordMeter_ShouldRejectAReadingAfterTheSessionEnded()
+    public void AddMeterValue_ShouldRejectAReadingAfterTheSessionEnded()
     {
         var session = EndedSession(5m, TimeSpan.FromHours(1));
 
         Assert.That(
-            () => session.RecordMeter(Start + TimeSpan.FromHours(2), 6m),
+            () => session.AddMeterValue(Start + TimeSpan.FromHours(2), 6m),
             Throws.InvalidOperationException.With.Message.Contains("stop transaction"));
     }
 
     [Test]
-    public void End_ShouldRejectAnEndBeforeTheLastMeterValue()
+    public void Stop_ShouldRejectAnEndBeforeTheLastMeterValue()
     {
         var session = ChargingSession.Start("acme", Guid.NewGuid(), 1, Start);
-        session.RecordMeter(Start + TimeSpan.FromMinutes(30), 5m);
+        session.AddMeterValue(Start + TimeSpan.FromMinutes(30), 5m);
 
         Assert.That(
-            () => session.End(Start + TimeSpan.FromMinutes(20)),
+            () => session.Stop(Start + TimeSpan.FromMinutes(20)),
             Throws.TypeOf<ArgumentOutOfRangeException>().With.Property("ParamName").EqualTo("atUtc"));
     }
 }

@@ -1,9 +1,8 @@
 namespace OpenCsms.Suite.Journeys;
 
 using System.Net;
-using OpenCsms.Api;
 using OpenCsms.Contracts;
-using OpenCsms.Domain.Ocpp;
+using OpenCsms.Protocol.Ocpp;
 using OpenCsms.Suite.Devices;
 using OpenCsms.Suite.Support;
 using ProtoTest.Core;
@@ -15,7 +14,7 @@ using ProtoTest.Rest;
 using BillingWorker = OpenCsms.Billing.Worker.Program;
 
 /// <summary>
-/// The M2 gateway journeys, through the framework's device stack: a charge point reaches the in-process
+/// The gateway journeys, through the framework's device stack: a charge point reaches the in-process
 /// API over <c>/ocpp/{chargePointId}</c>, boots, reports its connector, and runs one metered session to
 /// its stop. The CSMS ends up with the same session the REST API would have written, and the billing
 /// worker still sees its <c>session.ended</c> event, because the gateway publishes through the same

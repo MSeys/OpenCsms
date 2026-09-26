@@ -1,10 +1,11 @@
 namespace OpenCsms.Api;
 
 using System.Security.Claims;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
-using OpenCsms.Api.Ocpp;
-using OpenCsms.Data;
+using OpenCsms.Application.Billing;
+using OpenCsms.Application.Catalog;
+using OpenCsms.Application.Commands;
+using OpenCsms.Application.Sessions;
+using OpenCsms.Contracts;
 using OpenCsms.Domain;
 
 /// <summary>
@@ -39,147 +40,124 @@ internal static class DashboardEndpoints
 
     private static async Task<IResult> ListStationsAsync(
         ClaimsPrincipal user,
-        CsmsDbContext db,
+        StationReads stations,
         CancellationToken cancellationToken)
     {
         var tenantId = TenantId(user);
-        var stations = await db.Stations
-            .Where(station => station.TenantId == tenantId)
-            .OrderBy(station => station.Name)
-            .ToListAsync(cancellationToken);
-        return Results.Ok(stations.Select(DashboardStationResponse.From));
+        var rows = await stations.ListAsync(tenantId, cancellationToken);
+        return Results.Ok(rows.Select(ApiMappings.ToDashboardStationResponse));
     }
 
     private static async Task<IResult> GetStationAsync(
         Guid id,
         ClaimsPrincipal user,
-        CsmsDbContext db,
+        StationReads stations,
         CancellationToken cancellationToken)
     {
         var tenantId = TenantId(user);
-        return await db.Stations.FirstOrDefaultAsync(
-                station => station.Id == id && station.TenantId == tenantId,
-                cancellationToken) is { } station
-            ? Results.Ok(DashboardStationResponse.From(station))
+        return await stations.FindForTenantAsync(id, tenantId, cancellationToken) is { } station
+            ? Results.Ok(ApiMappings.ToDashboardStationResponse(station))
             : Results.NotFound(new { message = $"No station '{id}'." });
     }
 
     private static async Task<IResult> ListStationSessionsAsync(
         Guid id,
         ClaimsPrincipal user,
-        CsmsDbContext db,
+        StationReads stations,
+        SessionReads sessions,
         CancellationToken cancellationToken)
     {
         var tenantId = TenantId(user);
-        if (!await db.Stations.AnyAsync(
-                station => station.Id == id && station.TenantId == tenantId,
-                cancellationToken))
+        if (!await stations.ExistsForTenantAsync(id, tenantId, cancellationToken))
         {
             return Results.NotFound(new { message = $"No station '{id}'." });
         }
 
-        var sessions = await db.Sessions
-            .Where(session => session.StationId == id)
-            .OrderByDescending(session => session.StartedAtUtc)
-            .ToListAsync(cancellationToken);
-        return Results.Ok(sessions.Select(SessionResponse.From));
+        var rows = await sessions.ListByStationAsync(id, cancellationToken);
+        return Results.Ok(rows.Select(ApiMappings.ToSessionResponse));
     }
 
     private static async Task<IResult> ListInvoicesAsync(
         ClaimsPrincipal user,
-        CsmsDbContext db,
+        InvoiceReads invoices,
         CancellationToken cancellationToken)
     {
         var tenantId = TenantId(user);
-        var invoices = await db.Invoices
-            .Where(invoice => invoice.TenantId == tenantId)
-            .OrderByDescending(invoice => invoice.IssuedAtUtc)
-            .ToListAsync(cancellationToken);
-        return Results.Ok(invoices.Select(InvoiceResponse.From));
+        var rows = await invoices.ListByTenantAsync(tenantId, cancellationToken);
+        return Results.Ok(rows.Select(ApiMappings.ToInvoiceResponse));
     }
 
     private static async Task<IResult> GetInvoiceAsync(
         Guid id,
         ClaimsPrincipal user,
-        CsmsDbContext db,
+        InvoiceReads invoices,
         CancellationToken cancellationToken)
     {
         var tenantId = TenantId(user);
-        return await db.Invoices.FirstOrDefaultAsync(
-                invoice => invoice.Id == id && invoice.TenantId == tenantId,
-                cancellationToken) is { } invoice
-            ? Results.Ok(InvoiceResponse.From(invoice))
+        return await invoices.FindForTenantAsync(id, tenantId, cancellationToken) is { } invoice
+            ? Results.Ok(ApiMappings.ToInvoiceResponse(invoice))
             : Results.NotFound(new { message = $"No invoice '{id}'." });
     }
 
     private static async Task<IResult> ListTariffsAsync(
         ClaimsPrincipal user,
-        CsmsDbContext db,
+        TariffReads tariffs,
         CancellationToken cancellationToken)
     {
         var tenantId = TenantId(user);
-        var tariffs = await db.Tariffs
-            .Where(tariff => tariff.TenantId == tenantId)
-            .OrderBy(tariff => tariff.Name)
-            .ToListAsync(cancellationToken);
-        return Results.Ok(tariffs.Select(TariffResponse.From));
+        var rows = await tariffs.ListAsync(tenantId, cancellationToken);
+        return Results.Ok(rows.Select(ApiMappings.ToTariffResponse));
     }
 
     private static async Task<IResult> RemoteStartAsync(
         Guid id,
         RemoteStartRequest request,
         ClaimsPrincipal user,
-        CsmsDbContext db,
-        ChargePointConnections connections,
-        IOptions<OcppGatewayOptions> gatewayOptions,
+        StationReads stations,
+        OperatorCommands commands,
         CancellationToken cancellationToken)
     {
         var tenantId = TenantId(user);
-        if (!await db.Stations.AnyAsync(
-                station => station.Id == id && station.TenantId == tenantId,
-                cancellationToken))
+        if (!await stations.ExistsForTenantAsync(id, tenantId, cancellationToken))
         {
             return Results.NotFound(new { message = $"No station '{id}'." });
         }
 
-        return await OperatorCommands.RemoteStartAsync(id, request, db, connections, gatewayOptions, cancellationToken);
+        return RemoteCommandResults.Map(
+            await commands.RemoteStartAsync(id, request.IdTag, request.ConnectorId, cancellationToken));
     }
 
     private static async Task<IResult> RemoteStopAsync(
         Guid id,
         ClaimsPrincipal user,
-        CsmsDbContext db,
-        ChargePointConnections connections,
-        IOptions<OcppGatewayOptions> gatewayOptions,
+        SessionReads sessions,
+        OperatorCommands commands,
         CancellationToken cancellationToken)
     {
         var tenantId = TenantId(user);
-        if (!await db.Sessions.AnyAsync(
-                session => session.Id == id && session.TenantId == tenantId,
-                cancellationToken))
+        if (!await sessions.ExistsForTenantAsync(id, tenantId, cancellationToken))
         {
             return Results.NotFound(new { message = $"No session '{id}'." });
         }
 
-        return await OperatorCommands.RemoteStopAsync(id, db, connections, gatewayOptions, cancellationToken);
+        return RemoteCommandResults.Map(await commands.RemoteStopAsync(id, cancellationToken));
     }
 
     /// <summary>The public status page: every station's name, OCPP identity, last-seen stamp and connector statuses.</summary>
-    private static async Task<IResult> ListPublicStationsAsync(CsmsDbContext db, CancellationToken cancellationToken)
+    private static async Task<IResult> ListPublicStationsAsync(
+        StationReads stations,
+        ConnectorReads connectors,
+        CancellationToken cancellationToken)
     {
-        var stations = await db.Stations
-            .OrderBy(station => station.Name)
-            .ToListAsync(cancellationToken);
-        var connectors = await db.Connectors
-            .OrderBy(connector => connector.ConnectorId)
-            .ToListAsync(cancellationToken);
-        var byStation = connectors
+        var rows = await stations.ListAsync(tenantId: null, cancellationToken);
+        var connectorRows = await connectors.ListAllAsync(cancellationToken);
+        var byStation = connectorRows
             .GroupBy(connector => connector.StationId)
             .ToDictionary(
                 group => group.Key,
-                group => (IReadOnlyList<ConnectorResponse>)group.Select(ConnectorResponse.From).ToArray());
+                group => (IReadOnlyList<ConnectorResponse>)group.Select(ApiMappings.ToConnectorResponse).ToArray());
 
-        return Results.Ok(stations.Select(station => PublicStatusStationResponse.From(
+        return Results.Ok(rows.Select(station => ApiMappings.ToPublicStatusStationResponse(
             station,
             byStation.TryGetValue(station.Id, out var stationConnectors) ? stationConnectors : [])));
     }

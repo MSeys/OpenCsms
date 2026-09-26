@@ -2,8 +2,7 @@ namespace OpenCsms.Domain;
 
 /// <summary>
 /// What an operator charges for energy, a session start, and occupying a connector after the last
-/// meter value. The idle fee is billed per started hour after <see cref="IdleGracePeriod"/> - the
-/// rule the M2 idle-fee journey advances the clock to prove.
+/// meter value. The idle fee is billed per started hour after <see cref="IdleGracePeriod"/>.
 /// </summary>
 public sealed class Tariff
 {
