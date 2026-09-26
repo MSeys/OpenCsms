@@ -2,6 +2,7 @@ namespace OpenCsms.Suite;
 
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
+using OpenCsms.Api;
 using OpenCsms.Contracts;
 using OpenCsms.Data;
 using OpenCsms.Suite.Devices;
@@ -19,6 +20,7 @@ using ProtoTest.NUnit;
 using ProtoTest.Reporting;
 using ProtoTest.Rest;
 using ProtoTest.Sql.Testcontainers;
+using ProtoTest.Web;
 using BillingWorker = OpenCsms.Billing.Worker.Program;
 using CsmsApi = OpenCsms.Api.Program;
 
@@ -33,6 +35,11 @@ public sealed class Setup : ProtoTestAssembly
 {
     protected override void Configure(IProtoHostBuilder builder)
     {
+        // The browser application: the same API on its own loopback listener, because a browser needs a
+        // real address. It is registered after the pieces whose settings it consumes (the database, the
+        // broker, the dashboard build) and before the readiness probe that waits for its address.
+        var dashboard = new LoopbackApplication(CsmsTargets.Dashboard, CsmsApi.Create);
+
         builder
             // Time is a setting here too: the whole run lives at one instant, so the worker's
             // timestamps can be asserted and a product that reads the machine clock fails (R1a-04).
@@ -47,6 +54,7 @@ public sealed class Setup : ProtoTestAssembly
                 RabbitMqBroker.Container(),
                 RabbitMqOptions.ConnectionStringSetting,
                 "Messaging:RabbitMq:ConnectionString")
+            .AddInfrastructure(new DashboardBuildInfrastructure(), DashboardHosting.SettingKey)
             .AddWorkerHost<BillingWorker>("Billing")
             // The OCPP charge points: one in-process transport per (program, application), so the same
             // client registration reaches the gateway through the TestServer here and over the socket
@@ -65,6 +73,12 @@ public sealed class Setup : ProtoTestAssembly
                 .AddRest(rest => rest
                     .AddClient(CsmsTargets.Api)
                     .AddCollector<RestCoverageCollector>()))
+            // The dashboard application carries the browser only; the REST and OCPP clients above keep
+            // resolving the in-process server. The browser follows the published loopback address.
+            .AddApplication(CsmsTargets.Dashboard, app => app
+                .AddWeb(options => options.InstallBrowsers = true))
+            .AddInfrastructure(dashboard, dashboard.BaseUrlKey)
+            .AddHttpReadiness(CsmsTargets.Dashboard, "/healthz")
             .AddMessaging(messaging => messaging
                 .CaptureAttachments()
                 // Pre-bind the test's tap before the system under test publishes: the worker can

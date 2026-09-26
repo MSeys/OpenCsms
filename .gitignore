@@ -8,6 +8,10 @@ TestResults/
 .vs/
 .idea/
 
+## The dashboard's Node build: the gate builds it, the repository does not carry it
+src/OpenCsms.Dashboard/node_modules/
+src/OpenCsms.Dashboard/dist/
+
 ## Test attachments and traces the suite writes
 *.prototrace
 

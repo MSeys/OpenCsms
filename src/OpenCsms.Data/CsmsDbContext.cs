@@ -16,8 +16,21 @@ public sealed class CsmsDbContext(DbContextOptions<CsmsDbContext> options) : DbC
 
     public DbSet<Invoice> Invoices => Set<Invoice>();
 
+    public DbSet<User> Users => Set<User>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<User>(user =>
+        {
+            user.Property(value => value.Email).HasMaxLength(256);
+            user.Property(value => value.DisplayName).HasMaxLength(120);
+            user.Property(value => value.PasswordHash).HasMaxLength(256);
+            user.Property(value => value.Role).HasConversion<string>().HasMaxLength(16);
+            // One sign-in address identifies one account, wherever the tenant's rows are scoped.
+            user.HasIndex(value => value.Email).IsUnique();
+            user.HasIndex(value => value.TenantId);
+        });
+
         modelBuilder.Entity<Tariff>(tariff =>
         {
             tariff.Property(value => value.Name).HasMaxLength(120);

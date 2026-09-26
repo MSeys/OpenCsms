@@ -30,6 +30,8 @@
     <PackageReference Include="ProtoTest.Reporting" Version="1.1.0-alpha.1" />
     <PackageReference Include="ProtoTest.Rest" Version="1.1.0-alpha.1" />
     <PackageReference Include="ProtoTest.Sql.Testcontainers" Version="1.1.0-alpha.1" />
+    <PackageReference Include="ProtoTest.Web" Version="1.1.0-alpha.1" />
+    <PackageReference Include="ProtoTest.Web.Playwright" Version="1.1.0-alpha.1" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,5 +1,6 @@
 namespace OpenCsms.Api;
 
+using System.Security.Claims;
 using OpenCsms.Domain;
 using OpenCsms.Domain.Ocpp;
 
@@ -136,4 +137,80 @@ public sealed record InvoiceResponse(
             invoice.Total,
             invoice.Currency,
             invoice.IssuedAtUtc);
+}
+
+/// <summary>A sign-in attempt against the dashboard's own account store.</summary>
+public sealed record SignInRequest(string? Email, string? Password);
+
+/// <summary>Provisions a dashboard account for a tenant; the bootstrap path until user management has a screen.</summary>
+public sealed record CreateUserRequest(
+    string? TenantId,
+    string? Email,
+    string? DisplayName,
+    string? Password,
+    string? Role);
+
+public sealed record UserResponse(
+    Guid Id,
+    string TenantId,
+    string Email,
+    string DisplayName,
+    string Role,
+    DateTimeOffset CreatedAtUtc)
+{
+    public static UserResponse From(User user)
+        => new(user.Id, user.TenantId, user.Email, user.DisplayName, UserRoles.From(user.Role), user.CreatedAtUtc);
+}
+
+/// <summary>The signed-in user the SPA loads once per page; the cookie itself stays HttpOnly.</summary>
+public sealed record UserSessionResponse(
+    Guid UserId,
+    string Email,
+    string DisplayName,
+    string TenantId,
+    string Role)
+{
+    public static UserSessionResponse From(User user)
+        => new(user.Id, user.Email, user.DisplayName, user.TenantId, UserRoles.From(user.Role));
+
+    public static UserSessionResponse FromPrincipal(ClaimsPrincipal principal)
+        => new(
+            Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out var id)
+                ? id
+                : Guid.Empty,
+            principal.FindFirstValue(UserClaimTypes.Email) ?? string.Empty,
+            principal.Identity?.Name ?? string.Empty,
+            principal.FindFirstValue(UserClaimTypes.TenantId) ?? string.Empty,
+            principal.FindFirstValue(ClaimTypes.Role) ?? string.Empty);
+}
+
+/// <summary>A station as the signed-in operator's dashboard sees it; never another tenant's row.</summary>
+public sealed record DashboardStationResponse(
+    Guid Id,
+    string Name,
+    string ChargePointId,
+    int ConnectorCount,
+    Guid TariffId,
+    DateTimeOffset? LastSeenAtUtc)
+{
+    public static DashboardStationResponse From(Station station)
+        => new(
+            station.Id,
+            station.Name,
+            station.ChargePointId,
+            station.ConnectorCount,
+            station.TariffId,
+            station.LastSeenAtUtc);
+}
+
+/// <summary>A station as the public status page shows it: no tenant, no tariff, no session detail.</summary>
+public sealed record PublicStatusStationResponse(
+    Guid Id,
+    string Name,
+    string ChargePointId,
+    DateTimeOffset? LastSeenAtUtc,
+    IReadOnlyList<ConnectorResponse> Connectors)
+{
+    public static PublicStatusStationResponse From(Station station, IReadOnlyList<ConnectorResponse> connectors)
+        => new(station.Id, station.Name, station.ChargePointId, station.LastSeenAtUtc, connectors);
 }

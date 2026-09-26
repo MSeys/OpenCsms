@@ -1,24 +1,35 @@
 namespace OpenCsms.Api;
 
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using OpenCsms.Api.Ocpp;
 using OpenCsms.Data;
 using OpenCsms.Domain;
-using OpenCsms.Domain.Ocpp;
 using OpenCsms.Messaging;
 
 public sealed class Program
 {
-    public static async Task Main(string[] args)
+    public static void Main(string[] args) => Create(args).Run();
+
+    /// <summary>
+    /// Builds the application without running it, so a suite can host the same entry point on its own
+    /// loopback listener for the browser journeys. <paramref name="configuration"/> is the run's
+    /// collected configuration (database, broker, dashboard build); an environment that already
+    /// provides the values in its own configuration passes none.
+    /// </summary>
+    public static WebApplication Create(string[] args, IConfiguration? configuration = null)
     {
         var builder = WebApplication.CreateBuilder(args);
+        if (configuration is not null)
+        {
+            builder.Configuration.AddConfiguration(configuration);
+        }
 
         builder.Services.AddCsmsData();
         builder.Services.AddProblemDetails();
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen();
         builder.Services.AddRabbitMqEventPublisher();
+        builder.Services.AddCsmsAuthentication();
         // A standalone run has the system clock; the suite replaces this with the test's clock.
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.Configure<OcppGatewayOptions>(builder.Configuration.GetSection(OcppGatewayOptions.SectionName));
@@ -36,6 +47,9 @@ public sealed class Program
         app.UseExceptionHandler();
         app.UseSwagger();
         app.UseWebSockets();
+        app.UseDashboard();
+        app.UseAuthentication();
+        app.UseAuthorization();
 
         // One WebSocket per charge point, at the conventional OCPP path. The gateway is hosted here,
         // so the suite reaches it through the in-process application and a deployment through a socket.
@@ -245,89 +259,8 @@ public sealed class Program
             return Results.Ok(SessionResponse.From(session));
         });
 
-        api.MapPost("/stations/{id:guid}/remote-start", async (
-            Guid id,
-            RemoteStartRequest request,
-            CsmsDbContext db,
-            ChargePointConnections connections,
-            IOptions<OcppGatewayOptions> gatewayOptions,
-            CancellationToken cancellationToken) =>
-        {
-            var station = await db.Stations.FirstOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
-            if (station is null)
-            {
-                return Results.NotFound(new { message = $"No station '{id}'." });
-            }
-
-            if (!connections.TryGet(station.ChargePointId, out var connection))
-            {
-                return Results.Conflict(new { message = $"Charge point '{station.ChargePointId}' is not connected." });
-            }
-
-            // The operator waits for the device's own answer; the session itself starts when the
-            // charge point sends its StartTransaction, exactly as OCPP prescribes.
-            try
-            {
-                var answer = await connection.CallAsync<RemoteStartTransactionResponse>(
-                    OcppActions.RemoteStartTransaction,
-                    new RemoteStartTransactionRequest(request.IdTag, request.ConnectorId),
-                    TimeSpan.FromSeconds(gatewayOptions.Value.RemoteCallTimeoutSeconds),
-                    cancellationToken);
-                return Results.Ok(RemoteCommandResponse.From(answer.IdTagInfo));
-            }
-            catch (TimeoutException exception)
-            {
-                return Results.Problem(exception.Message, statusCode: StatusCodes.Status504GatewayTimeout);
-            }
-            catch (OcppCallException exception)
-            {
-                return Results.Problem(exception.Message, statusCode: StatusCodes.Status502BadGateway);
-            }
-        });
-
-        api.MapPost("/sessions/{id:guid}/remote-stop", async (
-            Guid id,
-            CsmsDbContext db,
-            ChargePointConnections connections,
-            IOptions<OcppGatewayOptions> gatewayOptions,
-            CancellationToken cancellationToken) =>
-        {
-            var session = await db.Sessions.FirstOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
-            if (session is null)
-            {
-                return Results.NotFound(new { message = $"No session '{id}'." });
-            }
-
-            if (!session.IsOpen)
-            {
-                return Results.Conflict(new { message = $"Session '{id}' has already ended." });
-            }
-
-            var station = await db.Stations.FirstOrDefaultAsync(candidate => candidate.Id == session.StationId, cancellationToken)
-                ?? throw new InvalidOperationException($"Session '{id}' references an unknown station '{session.StationId}'.");
-            if (!connections.TryGet(station.ChargePointId, out var connection))
-            {
-                return Results.Conflict(new { message = $"Charge point '{station.ChargePointId}' is not connected." });
-            }
-
-            try
-            {
-                var answer = await connection.CallAsync<RemoteStopTransactionResponse>(
-                    OcppActions.RemoteStopTransaction,
-                    new RemoteStopTransactionRequest(session.TransactionId),
-                    TimeSpan.FromSeconds(gatewayOptions.Value.RemoteCallTimeoutSeconds),
-                    cancellationToken);
-                return Results.Ok(RemoteCommandResponse.From(answer.IdTagInfo));
-            }
-            catch (TimeoutException exception)
-            {
-                return Results.Problem(exception.Message, statusCode: StatusCodes.Status504GatewayTimeout);
-            }
-            catch (OcppCallException exception)
-            {
-                return Results.Problem(exception.Message, statusCode: StatusCodes.Status502BadGateway);
-            }
-        });
+        api.MapPost("/stations/{id:guid}/remote-start", OperatorCommands.RemoteStartAsync);
+        api.MapPost("/sessions/{id:guid}/remote-stop", OperatorCommands.RemoteStopAsync);
 
         api.MapGet("/sessions/{id:guid}/invoice", async (
             Guid id,
@@ -342,7 +275,10 @@ public sealed class Program
                 ? Results.Ok(InvoiceResponse.From(invoice))
                 : Results.NotFound(new { message = $"No invoice '{id}'." }));
 
-        await app.RunAsync();
+        api.MapIdentityEndpoints();
+        app.MapDashboardEndpoints();
+
+        return app;
     }
 
     private static IResult Problem(ArgumentException exception)

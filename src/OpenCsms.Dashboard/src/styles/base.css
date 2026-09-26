@@ -1,0 +1,401 @@
+/* OpenCSMS dashboard primitives. Components own their own layout; this file holds tokens, the reset
+   and the few controls that every screen shares. */
+
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/manrope-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/manrope-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/manrope-600.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Space Grotesk";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/space-grotesk-600.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono-500.woff2") format("woff2");
+}
+
+:root {
+  --oc-ink: #17232c;
+  --oc-ink-deep: #101b23;
+  --oc-muted: #5c7080;
+  --oc-faint: #8298a4;
+  --oc-paper: #eef2f1;
+  --oc-surface: #ffffff;
+  --oc-line: #d8e2e0;
+  --oc-line-soft: #e8efed;
+  --oc-accent: #1f7a5c;
+  --oc-accent-strong: #176248;
+  --oc-accent-soft: #e4f3ec;
+  --oc-success: #1e8a5e;
+  --oc-success-soft: #e6f4ee;
+  --oc-danger: #b5432f;
+  --oc-danger-soft: #fbeae6;
+  --oc-warning: #96650f;
+  --oc-warning-soft: #f9f0dc;
+  --oc-info: #2b6cb0;
+  --oc-info-soft: #e8f0fa;
+  --oc-neutral: #64748b;
+  --oc-neutral-soft: #eef1f4;
+  --oc-radius-panel: 12px;
+  --oc-radius-control: 8px;
+  --oc-shadow-panel: 0 1px 2px rgb(16 27 35 / 5%);
+  --font-display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  --font-ui: "Manrope", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--oc-paper);
+  color: var(--oc-ink);
+  font: 15px/1.55 var(--font-ui);
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+h1 {
+  font-size: 26px;
+  line-height: 1.2;
+}
+
+h2 {
+  font-size: 17px;
+  line-height: 1.3;
+}
+
+h3 {
+  font-size: 15px;
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--oc-accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+:focus-visible {
+  outline: 2px solid var(--oc-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+button {
+  font: inherit;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  white-space: nowrap;
+}
+
+.muted {
+  color: var(--oc-muted);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------------------------------------------------------------- controls */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--oc-line);
+  border-radius: var(--oc-radius-control);
+  background: var(--oc-surface);
+  color: var(--oc-ink);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.button:hover:not(:disabled) {
+  border-color: var(--oc-faint);
+  background: #f6f9f8;
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.button--primary {
+  border-color: var(--oc-accent);
+  background: var(--oc-accent);
+  color: #fff;
+}
+
+.button--primary:hover:not(:disabled) {
+  border-color: var(--oc-accent-strong);
+  background: var(--oc-accent-strong);
+}
+
+.button--quiet {
+  border-color: transparent;
+  background: transparent;
+  padding: 0 8px;
+}
+
+.button--quiet:hover:not(:disabled) {
+  border-color: var(--oc-line);
+  background: #f6f9f8;
+}
+
+.field {
+  display: grid;
+  gap: 5px;
+}
+
+.field > label {
+  color: var(--oc-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.input,
+.select {
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--oc-line);
+  border-radius: var(--oc-radius-control);
+  background: var(--oc-surface);
+  color: var(--oc-ink);
+  font: inherit;
+}
+
+.input:focus,
+.select:focus {
+  border-color: var(--oc-accent);
+}
+
+/* ---------------------------------------------------------------- surfaces */
+
+.panel {
+  border: 1px solid var(--oc-line);
+  border-radius: var(--oc-radius-panel);
+  background: var(--oc-surface);
+  box-shadow: var(--oc-shadow-panel);
+}
+
+.panel__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--oc-line-soft);
+}
+
+.panel__body {
+  padding: 18px;
+}
+
+/* A label/value list for detail screens, so every detail page reads the same way. */
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px 22px;
+}
+
+.facts__item {
+  display: grid;
+  gap: 3px;
+}
+
+.facts__label {
+  color: var(--oc-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.facts__value {
+  font-size: 15px;
+}
+
+/* ---------------------------------------------------------------- table */
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  min-width: 540px;
+  border-collapse: collapse;
+}
+
+.table th {
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--oc-line);
+  color: var(--oc-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--oc-line-soft);
+  vertical-align: middle;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.table tbody tr:hover {
+  background: #f7faf9;
+}
+
+/* ---------------------------------------------------------------- badge */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge[data-tone="success"] {
+  background: var(--oc-success-soft);
+  color: var(--oc-success);
+}
+
+.badge[data-tone="danger"] {
+  background: var(--oc-danger-soft);
+  color: var(--oc-danger);
+}
+
+.badge[data-tone="warning"] {
+  background: var(--oc-warning-soft);
+  color: var(--oc-warning);
+}
+
+.badge[data-tone="info"] {
+  background: var(--oc-info-soft);
+  color: var(--oc-info);
+}
+
+.badge[data-tone="accent"] {
+  background: var(--oc-accent-soft);
+  color: var(--oc-accent);
+}
+
+.badge[data-tone="neutral"] {
+  background: var(--oc-neutral-soft);
+  color: var(--oc-neutral);
+}
+
+/* ---------------------------------------------------------------- notices */
+
+.notice {
+  border: 1px solid var(--oc-line);
+  border-radius: var(--oc-radius-control);
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.notice[data-tone="success"] {
+  border-color: var(--oc-success);
+  background: var(--oc-success-soft);
+  color: var(--oc-success);
+}
+
+.notice[data-tone="danger"] {
+  border-color: var(--oc-danger);
+  background: var(--oc-danger-soft);
+  color: var(--oc-danger);
+}
+
+.notice[data-tone="warning"] {
+  border-color: var(--oc-warning);
+  background: var(--oc-warning-soft);
+  color: var(--oc-warning);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

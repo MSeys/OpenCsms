@@ -28,6 +28,12 @@ if ($Mode -eq "configured") {
 }
 
 $logPath = Join-Path $gatesRoot ("opencsms-{0}-{1}.log" -f $Mode, (Get-Date).ToString("yyyyMMdd-HHmmss"))
+Write-Host "=== opencsms ${Mode}: building the dashboard first ==="
+& (Join-Path $PSScriptRoot "build-dashboard.ps1")
+if ($LASTEXITCODE -ne 0) {
+    throw "The dashboard build failed with exit code $LASTEXITCODE; the suite was not run."
+}
+
 Write-Host "=== opencsms ${Mode}: dotnet test tests/OpenCsms.Suite -c Release -> $logPath ==="
 Write-Host ""
 

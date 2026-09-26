@@ -1,0 +1,117 @@
+namespace OpenCsms.Suite.Api;
+
+using System.Net;
+using OpenCsms.Api;
+using OpenCsms.Domain;
+using OpenCsms.Suite.Support;
+using ProtoTest.Core;
+using ProtoTest.NUnit;
+using ProtoTest.Rest;
+
+/// <summary>
+/// The dashboard's API contracts, without a browser: the read surface is closed to anonymous callers
+/// and open to any signed-in user, the public status surface is open to everyone, and the operator
+/// commands distinguish the two roles - a viewer is refused (403) before anything reaches a charge
+/// point, and the operator reaches the device path (409, because the provisioned charge point is not
+/// connected). The cookie is what carries the role; the suite signs in through the product's own
+/// endpoint, exactly as the SPA does. The multi-tenancy negative test is R3.2's.
+/// </summary>
+[Application(CsmsTargets.Api)]
+public sealed class DashboardContracts
+{
+    [ProtoTest]
+    public async Task TheDashboardRefusesAnonymousReads()
+    {
+        using var response = await Proto.Context.Rest().GetAsync("/api/dashboard/stations");
+
+        response.Should.HaveHttpStatus(HttpStatusCode.Unauthorized);
+    }
+
+    [ProtoTest]
+    public async Task ThePublicStatusNeedsNoAccount()
+    {
+        using var response = await Proto.Context.Rest().GetAsync("/api/status/stations");
+
+        response.Should.HaveHttpStatus(HttpStatusCode.OK);
+    }
+
+    [ProtoTest]
+    [CsmsOperator]
+    public async Task TheOperatorReadsTheirStationThroughTheDashboard()
+    {
+        var op = Proto.Context.Resolve<CsmsOperator>();
+        await SignInAsync(op.LoginEmail, op.LoginPassword);
+
+        using (var stations = await Proto.Context.Rest().GetAsync("/api/dashboard/stations"))
+        {
+            stations.Should.HaveHttpStatus(HttpStatusCode.OK);
+            var listed = stations.ReadAsJson<DashboardStationResponse[]>()!;
+            Assert.That(
+                listed.Select(station => station.Id),
+                Does.Contain(op.StationId),
+                "the signed-in operator's own station is listed");
+        }
+
+        using var sessions = await Proto.Context.Rest().GetAsync($"/api/dashboard/stations/{op.StationId}/sessions");
+        sessions.Should.HaveHttpStatus(HttpStatusCode.OK);
+        Assert.That(sessions.ReadAsJson<SessionResponse[]>(), Is.Empty);
+    }
+
+    [ProtoTest]
+    [CsmsOperator]
+    public async Task AViewerReadsButCannotInvokeTheOperatorCommands()
+    {
+        var op = Proto.Context.Resolve<CsmsOperator>();
+        var viewerEmail = $"{Proto.Context.UniqueName("viewer")}@opencsms.test";
+        var viewerPassword = Proto.Context.UniqueName("secret");
+        using (var created = await Proto.Context.Rest()
+                   .Body(new
+                   {
+                       tenantId = op.TenantId,
+                       email = viewerEmail,
+                       displayName = "Viewer",
+                       password = viewerPassword,
+                       role = UserRoles.Viewer
+                   })
+                   .PostAsync("/api/users"))
+        {
+            created.Should.HaveHttpStatus(HttpStatusCode.Created);
+        }
+
+        await SignInAsync(viewerEmail, viewerPassword);
+
+        using (var reads = await Proto.Context.Rest().GetAsync("/api/dashboard/stations"))
+        {
+            reads.Should.HaveHttpStatus(HttpStatusCode.OK);
+        }
+
+        using var command = await Proto.Context.Rest()
+            .Body(new { idTag = "card-1" })
+            .PostAsync($"/api/dashboard/stations/{op.StationId}/remote-start");
+        command.Should.HaveHttpStatus(HttpStatusCode.Forbidden);
+    }
+
+    [ProtoTest]
+    [CsmsOperator]
+    public async Task AnOperatorReachesTheCommandThroughTheDashboard()
+    {
+        var op = Proto.Context.Resolve<CsmsOperator>();
+        await SignInAsync(op.LoginEmail, op.LoginPassword);
+
+        using var response = await Proto.Context.Rest()
+            .Body(new { idTag = "card-1" })
+            .PostAsync($"/api/dashboard/stations/{op.StationId}/remote-start");
+
+        // The station belongs to the signed-in operator, so the role check passed and the product's
+        // own device path answered: this charge point is not connected (R2.4's 409).
+        response.Should.HaveHttpStatus(HttpStatusCode.Conflict);
+    }
+
+    private static async Task SignInAsync(string email, string password)
+    {
+        using var response = await Proto.Context.Rest()
+            .Body(new { email, password })
+            .PostAsync("/api/auth/sign-in");
+        response.Should.HaveHttpStatus(HttpStatusCode.OK);
+    }
+}
