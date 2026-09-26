@@ -40,7 +40,7 @@ public sealed class ChargePointsChargeOverOcpp
     public async Task AChargePointBootsChargesAndStopsASession()
     {
         var op = Proto.Context.Resolve<CsmsOperator>();
-        var charger = Proto.Context.Devices().For<AcCharger>(op.ChargePointId);
+        var charger = Proto.Context.Devices(CsmsTargets.Chargers).For<AcCharger>(op.ChargePointId);
 
         // Act: the charge point does what a real one does at a connector.
         var boot = await charger.BootAsync();
@@ -110,7 +110,7 @@ public sealed class ChargePointsChargeOverOcpp
     public async Task TheOperatorRemotelyStartsAndStopsAChargePoint()
     {
         var op = Proto.Context.Resolve<CsmsOperator>();
-        var charger = Proto.Context.Devices().For<AcCharger>(op.ChargePointId);
+        var charger = Proto.Context.Devices(CsmsTargets.Chargers).For<AcCharger>(op.ChargePointId);
         await charger.BootAsync();
         await charger.ReportStatusAsync(0, ConnectorStatus.Available);
 
@@ -193,7 +193,7 @@ public sealed class ChargePointsChargeOverOcpp
     public async Task ADeviceThatRefusesTheCallMakesTheRemoteCommandABadGateway()
     {
         var op = Proto.Context.Resolve<CsmsOperator>();
-        var charger = Proto.Context.Devices().For<AcCharger>(op.ChargePointId);
+        var charger = Proto.Context.Devices(CsmsTargets.Chargers).For<AcCharger>(op.ChargePointId);
         await charger.BootAsync();
 
         // Act: the device receives the CSMS's remote start and answers a call error - it cannot execute
@@ -243,7 +243,7 @@ public sealed class ChargePointsChargeOverOcpp
     public async Task ABlockedRemoteStartIsTheDevicesOwnAnswer()
     {
         var op = Proto.Context.Resolve<CsmsOperator>();
-        var charger = Proto.Context.Devices().For<AcCharger>(op.ChargePointId);
+        var charger = Proto.Context.Devices(CsmsTargets.Chargers).For<AcCharger>(op.ChargePointId);
         await charger.BootAsync();
 
         // Act: the device answers the CSMS's call with its own authorization decision - here Blocked.
@@ -268,7 +268,7 @@ public sealed class ChargePointsChargeOverOcpp
     public async Task AnUnansweredRemoteCommandTimesOutAtTheGateway()
     {
         var op = Proto.Context.Resolve<CsmsOperator>();
-        var charger = Proto.Context.Devices().For<AcCharger>(op.ChargePointId);
+        var charger = Proto.Context.Devices(CsmsTargets.Chargers).For<AcCharger>(op.ChargePointId);
         await charger.BootAsync();
 
         // Act: the device receives the remote start and does not answer it. The suite configures the
@@ -328,7 +328,7 @@ public sealed class ChargePointsChargeOverOcpp
     {
         // Arrange: the attribute registered the tenant, tariff and station this test bills against.
         var op = Proto.Context.Resolve<CsmsOperator>();
-        var charger = Proto.Context.Devices().For<AcCharger>(op.ChargePointId);
+        var charger = Proto.Context.Devices(CsmsTargets.Chargers).For<AcCharger>(op.ChargePointId);
         await charger.BootAsync();
 
         // Act: a driver charges 22 kWh, the car stays plugged in, and five hours after the last meter
@@ -369,7 +369,7 @@ public sealed class ChargePointsChargeOverOcpp
     public async Task ACarThatUnplugsBeforeTheGracePeriodPaysNoIdleFee()
     {
         var op = Proto.Context.Resolve<CsmsOperator>();
-        var charger = Proto.Context.Devices().For<AcCharger>(op.ChargePointId);
+        var charger = Proto.Context.Devices(CsmsTargets.Chargers).For<AcCharger>(op.ChargePointId);
         await charger.BootAsync();
 
         // Act: the same 22 kWh, but the driver unplugs five minutes in - inside the 10-minute grace.
@@ -399,7 +399,7 @@ public sealed class ChargePointsChargeOverOcpp
     public async Task ASecondSessionOnAConnectorBillsItsOwnEnergyOnly()
     {
         var op = Proto.Context.Resolve<CsmsOperator>();
-        var charger = Proto.Context.Devices().For<AcCharger>(op.ChargePointId);
+        var charger = Proto.Context.Devices(CsmsTargets.Chargers).For<AcCharger>(op.ChargePointId);
         await charger.BootAsync();
 
         // Act: a connector's first session ends at a 22 kWh register...

@@ -302,6 +302,13 @@ public sealed class AcCharger : ProtoDevice
         CancellationToken cancellationToken = default)
         => SendTextAsync(OcppJson.SerializeCallError(messageId, errorCode, description), cancellationToken);
 
+    /// <summary>
+    /// Drops the connection; the next call reconnects, the way a charge point redials after a
+    /// network drop. The gateway's registry replaces the old connection when the boot arrives.
+    /// </summary>
+    public Task DropConnectionAsync(CancellationToken cancellationToken = default)
+        => DisconnectAsync(cancellationToken).AsTask();
+
     /// <summary>The refusal half of a server-initiated call: read the request, answer an error, return it.</summary>
     private async Task<TRequest> RefuseCallAsync<TRequest>(
         string action,

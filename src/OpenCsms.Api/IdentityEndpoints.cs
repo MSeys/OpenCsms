@@ -1,6 +1,7 @@
 namespace OpenCsms.Api;
 
 using System.Security.Claims;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using OpenCsms.Application.Identity;
@@ -22,6 +23,7 @@ internal static class IdentityEndpoints
         auth.MapPost("/sign-in", SignInAsync);
         auth.MapPost("/sign-out", SignOutAsync);
         auth.MapGet("/session", GetSession).RequireAuthorization(CsmsPolicies.TenantUser);
+        auth.MapGet("/xsrf", GetAntiforgeryToken).RequireAuthorization(CsmsPolicies.TenantUser);
 
         api.MapPost("/users", CreateUserAsync).WithTags("Users");
     }
@@ -60,6 +62,16 @@ internal static class IdentityEndpoints
     }
 
     private static IResult GetSession(ClaimsPrincipal user) => Results.Ok(ApiMappings.ToUserSessionResponse(user));
+
+    /// <summary>
+    /// Hands the SPA its anti-forgery request token. The token pairs with the cookie this response
+    /// stores, so the dashboard fetches it after sign-in and sends it back on every mutation.
+    /// </summary>
+    private static IResult GetAntiforgeryToken(HttpContext http, IAntiforgery antiforgery)
+    {
+        var tokens = antiforgery.GetAndStoreTokens(http);
+        return Results.Ok(new { requestToken = tokens.RequestToken });
+    }
 
     private static async Task<IResult> CreateUserAsync(
         CreateUserRequest request,

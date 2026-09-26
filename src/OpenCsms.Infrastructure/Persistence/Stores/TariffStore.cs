@@ -12,6 +12,12 @@ public sealed class TariffStore(CsmsDbContext db) : ITariffQueries, ITariffComma
         => db.Tariffs.FirstOrDefaultAsync(tariff => tariff.Id == tariffId, cancellationToken);
 
     /// <inheritdoc />
+    public Task<Tariff?> FindForTenantAsync(Guid tariffId, string tenantId, CancellationToken cancellationToken = default)
+        => db.Tariffs.FirstOrDefaultAsync(
+            tariff => tariff.Id == tariffId && tariff.TenantId == tenantId,
+            cancellationToken);
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<Tariff>> ListAsync(string? tenantId, CancellationToken cancellationToken = default)
         => await db.Tariffs
             .Where(tariff => tenantId == null || tariff.TenantId == tenantId)
@@ -24,4 +30,8 @@ public sealed class TariffStore(CsmsDbContext db) : ITariffQueries, ITariffComma
         db.Tariffs.Add(tariff);
         await db.SaveChangesAsync(cancellationToken);
     }
+
+    /// <inheritdoc />
+    public Task SaveAsync(CancellationToken cancellationToken = default)
+        => db.SaveChangesAsync(cancellationToken);
 }

@@ -87,6 +87,13 @@ public sealed record CreateUserRequest(
     string? Password,
     string? Role);
 
+/// <summary>Reprices a tariff; stored invoices keep the prices they were billed at.</summary>
+public sealed record UpdateTariffRequest(
+    decimal EnergyPricePerKwh,
+    decimal StartFee,
+    decimal IdleFeePerHour,
+    TimeSpan IdleGracePeriod);
+
 public sealed record UserResponse(
     Guid Id,
     string TenantId,

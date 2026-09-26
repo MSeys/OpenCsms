@@ -17,4 +17,12 @@ public static class CsmsTargets
 
     /// <summary>The device client the OCPP charge-point simulator hangs off.</summary>
     public const string Chargers = "Chargers";
+
+    /// <summary>
+    /// The charge-point client bound to the dashboard application: the same simulator over a real
+    /// socket to the loopback listener, so a browser journey can drive a connected charge point
+    /// through the dashboard's own remote commands. The in-process journeys keep using
+    /// <see cref="Chargers"/>, whose transport reaches the test server with the test's clock.
+    /// </summary>
+    public const string DashboardChargers = "DashboardChargers";
 }

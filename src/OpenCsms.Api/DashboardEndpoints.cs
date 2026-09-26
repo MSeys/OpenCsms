@@ -31,9 +31,14 @@ internal static class DashboardEndpoints
         dashboard.MapGet("/tariffs", ListTariffsAsync);
 
         dashboard.MapPost("/stations/{id:guid}/remote-start", RemoteStartAsync)
-            .RequireAuthorization(CsmsPolicies.Operator);
+            .RequireAuthorization(CsmsPolicies.Operator)
+            .AddEndpointFilter<ValidateAntiforgeryFilter>();
         dashboard.MapPost("/sessions/{id:guid}/remote-stop", RemoteStopAsync)
-            .RequireAuthorization(CsmsPolicies.Operator);
+            .RequireAuthorization(CsmsPolicies.Operator)
+            .AddEndpointFilter<ValidateAntiforgeryFilter>();
+        dashboard.MapPut("/tariffs/{id:guid}", UpdateTariffAsync)
+            .RequireAuthorization(CsmsPolicies.Operator)
+            .AddEndpointFilter<ValidateAntiforgeryFilter>();
 
         app.MapGet("/api/status/stations", ListPublicStationsAsync).WithTags("Status").AllowAnonymous();
     }
@@ -107,6 +112,43 @@ internal static class DashboardEndpoints
         var tenantId = TenantId(user);
         var rows = await tariffs.ListAsync(tenantId, cancellationToken);
         return Results.Ok(rows.Select(ApiMappings.ToTariffResponse));
+    }
+
+    private static async Task<IResult> UpdateTariffAsync(
+        Guid id,
+        UpdateTariffRequest request,
+        ClaimsPrincipal user,
+        TariffEditing editing,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = TenantId(user);
+        UpdateTariffOutcome outcome;
+        try
+        {
+            outcome = await editing.UpdateAsync(
+                id,
+                tenantId,
+                new UpdateTariffCommand(
+                    request.EnergyPricePerKwh,
+                    request.StartFee,
+                    request.IdleFeePerHour,
+                    request.IdleGracePeriod),
+                cancellationToken);
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [exception.ParamName ?? "request"] = [exception.Message]
+            });
+        }
+
+        return outcome switch
+        {
+            TariffUpdated updated => Results.Ok(ApiMappings.ToTariffResponse(updated.Tariff)),
+            TariffUpdateMissing missing => Results.NotFound(new { message = $"No tariff '{missing.TariffId}'." }),
+            _ => throw new InvalidOperationException("Unhandled tariff update outcome.")
+        };
     }
 
     private static async Task<IResult> RemoteStartAsync(

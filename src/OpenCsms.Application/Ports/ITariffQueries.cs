@@ -8,6 +8,9 @@ public interface ITariffQueries
     /// <summary>Finds a tariff by id, or null when none is registered.</summary>
     Task<Tariff?> FindAsync(Guid tariffId, CancellationToken cancellationToken = default);
 
+    /// <summary>Finds a tariff by id within one tenant, or null when it is not that tenant's.</summary>
+    Task<Tariff?> FindForTenantAsync(Guid tariffId, string tenantId, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// The tariffs in name order; <paramref name="tenantId"/> null lists every tenant's, which is the
     /// machine API's filter.

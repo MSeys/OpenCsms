@@ -76,6 +76,18 @@ export interface Tariff {
   currency: string;
 }
 
+export interface RemoteCommandResult {
+  status: string;
+}
+
+export interface TariffUpdate {
+  energyPricePerKwh: number;
+  startFee: number;
+  idleFeePerHour: number;
+  /** The idle grace period the API binds, "HH:mm:ss". */
+  idleGracePeriod: string;
+}
+
 /** The application's `application/problem+json` envelope, as an Error. */
 export class ApiProblem extends Error {
   constructor(
@@ -209,6 +221,103 @@ export function getInvoice(invoiceId: string): Promise<Invoice> {
 
 export function listTariffs(): Promise<Tariff[]> {
   return request<Tariff[]>("GET", "/api/dashboard/tariffs");
+}
+
+// ---------------------------------------------------------------- dashboard mutations
+
+/**
+ * The dashboard's cookie-authenticated mutations. Each one fetches a fresh anti-forgery request
+ * token first and sends it back in the X-XSRF-TOKEN header the API validates; a viewer calling
+ * one gets the API's 403, exactly as the contract tests pin it.
+ */
+async function mutation<T>(method: string, path: string, body: unknown): Promise<T> {
+  const tokens = await request<{ requestToken: string }>("GET", "/api/auth/xsrf", {
+    suppressUnauthorizedRedirect: true
+  });
+
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      method,
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "X-XSRF-TOKEN": tokens.requestToken
+      },
+      credentials: "same-origin",
+      body: JSON.stringify(body)
+    });
+  } catch {
+    throw new ApiProblem(0, "network_error", "The OpenCSMS API is unreachable.");
+  }
+
+  if (response.status === 401) {
+    onUnauthorized?.();
+  }
+
+  if (!response.ok) {
+    throw await problemFrom(response);
+  }
+
+  return (await response.json()) as T;
+}
+
+export function updateTariff(tariffId: string, update: TariffUpdate): Promise<Tariff> {
+  return mutation<Tariff>("PUT", `/api/dashboard/tariffs/${encodeURIComponent(tariffId)}`, update);
+}
+
+export function remoteStart(
+  stationId: string,
+  idTag: string,
+  connectorId: number | null
+): Promise<RemoteCommandResult> {
+  return mutation<RemoteCommandResult>(
+    "POST",
+    `/api/dashboard/stations/${encodeURIComponent(stationId)}/remote-start`,
+    { idTag, connectorId }
+  );
+}
+
+export function remoteStop(sessionId: string): Promise<RemoteCommandResult> {
+  return mutation<RemoteCommandResult>(
+    "POST",
+    `/api/dashboard/sessions/${encodeURIComponent(sessionId)}/remote-stop`,
+    {}
+  );
+}
+
+/** Downloads the tenant's monthly invoice export the way the suite's Sheets journey reads it. */
+export async function downloadInvoiceExport(month: string): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/invoices/export?month=${encodeURIComponent(month)}`, {
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      }
+    });
+  } catch {
+    throw new ApiProblem(0, "network_error", "The OpenCSMS API is unreachable.");
+  }
+
+  if (response.status === 401) {
+    onUnauthorized?.();
+  }
+
+  if (!response.ok) {
+    throw await problemFrom(response);
+  }
+
+  const disposition = response.headers.get("content-disposition") ?? "";
+  const fileName = /filename="?([^";]+)"?/.exec(disposition)?.[1] ?? `invoices-${month}.xlsx`;
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 // ---------------------------------------------------------------- public status

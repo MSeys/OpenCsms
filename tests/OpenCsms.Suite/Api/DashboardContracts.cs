@@ -64,19 +64,8 @@ public sealed class DashboardContracts
         var op = Proto.Context.Resolve<CsmsOperator>();
         var viewerEmail = $"{Proto.Context.UniqueName("viewer")}@opencsms.test";
         var viewerPassword = Proto.Context.UniqueName("secret");
-        using (var created = await Proto.Context.Rest()
-                   .Body(new
-                   {
-                       tenantId = op.TenantId,
-                       email = viewerEmail,
-                       displayName = "Viewer",
-                       password = viewerPassword,
-                       role = UserRoles.Viewer
-                   })
-                   .PostAsync("/api/users"))
-        {
-            created.Should.HaveHttpStatus(HttpStatusCode.Created);
-        }
+        await CsmsProvisioning.ProvisionUserAsync(
+            Proto.Context, op.TenantId, viewerEmail, "Viewer", viewerPassword, UserRoles.Viewer);
 
         await SignInAsync(viewerEmail, viewerPassword);
 
@@ -85,7 +74,9 @@ public sealed class DashboardContracts
             reads.Should.HaveHttpStatus(HttpStatusCode.OK);
         }
 
+        var token = await AntiforgeryTokenAsync();
         using var command = await Proto.Context.Rest()
+            .Header("X-XSRF-TOKEN", token)
             .Body(new { idTag = "card-1" })
             .PostAsync($"/api/dashboard/stations/{op.StationId}/remote-start");
         command.Should.HaveHttpStatus(HttpStatusCode.Forbidden);
@@ -98,7 +89,9 @@ public sealed class DashboardContracts
         var op = Proto.Context.Resolve<CsmsOperator>();
         await SignInAsync(op.LoginEmail, op.LoginPassword);
 
+        var token = await AntiforgeryTokenAsync();
         using var response = await Proto.Context.Rest()
+            .Header("X-XSRF-TOKEN", token)
             .Body(new { idTag = "card-1" })
             .PostAsync($"/api/dashboard/stations/{op.StationId}/remote-start");
 
@@ -107,11 +100,9 @@ public sealed class DashboardContracts
         response.Should.HaveHttpStatus(HttpStatusCode.Conflict);
     }
 
-    private static async Task SignInAsync(string email, string password)
-    {
-        using var response = await Proto.Context.Rest()
-            .Body(new { email, password })
-            .PostAsync("/api/auth/sign-in");
-        response.Should.HaveHttpStatus(HttpStatusCode.OK);
-    }
+    private static Task SignInAsync(string email, string password)
+        => DashboardSession.SignInAsync(email, password);
+
+    private static Task<string> AntiforgeryTokenAsync()
+        => DashboardSession.AntiforgeryTokenAsync();
 }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { ApiProblem, listInvoices, type Invoice } from "../api";
+import { ApiProblem, downloadInvoiceExport, listInvoices, type Invoice } from "../api";
 import EmptyState from "../components/EmptyState.vue";
 import LoadingBlock from "../components/LoadingBlock.vue";
 import PageHeader from "../components/PageHeader.vue";
@@ -9,6 +9,10 @@ import { formatDateTime, formatMoney } from "../format";
 const invoices = ref<Invoice[]>([]);
 const loading = ref(true);
 const loadError = ref<string | null>(null);
+
+const exportMonth = ref(new Date().toISOString().slice(0, 7));
+const exportBusy = ref(false);
+const exportError = ref<string | null>(null);
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -22,6 +26,24 @@ async function load(): Promise<void> {
   }
 }
 
+async function downloadExport(): Promise<void> {
+  const month = exportMonth.value.trim();
+  if (!month) {
+    exportError.value = "Enter the month to export as YYYY-MM.";
+    return;
+  }
+
+  exportBusy.value = true;
+  exportError.value = null;
+  try {
+    await downloadInvoiceExport(month);
+  } catch (cause) {
+    exportError.value = cause instanceof ApiProblem ? cause.message : "The export could not be downloaded.";
+  } finally {
+    exportBusy.value = false;
+  }
+}
+
 onMounted(load);
 </script>
 
@@ -32,6 +54,32 @@ onMounted(load);
       description="What the billing worker issued for this operator's ended sessions, newest first."
       testid="invoices-title"
     />
+
+    <div class="panel export">
+      <div class="panel__header">
+        <h2>Monthly export</h2>
+      </div>
+      <div class="panel__body">
+        <p class="muted">One spreadsheet per month: every invoice this operator's network issued in it.</p>
+        <form class="export__form" @submit.prevent="downloadExport">
+          <div class="field">
+            <label for="export-month">Month (YYYY-MM)</label>
+            <input
+              id="export-month"
+              v-model="exportMonth"
+              class="input"
+              type="month"
+              required
+              data-testid="export-month"
+            />
+          </div>
+          <button class="button" type="submit" :disabled="exportBusy" data-testid="export-download">
+            Download .xlsx
+          </button>
+        </form>
+        <p v-if="exportError" class="notice" data-tone="danger" data-testid="export-error">{{ exportError }}</p>
+      </div>
+    </div>
 
     <div class="panel">
       <div class="panel__header">
@@ -82,3 +130,22 @@ onMounted(load);
     </div>
   </section>
 </template>
+
+<style scoped>
+.export {
+  margin-bottom: 18px;
+}
+
+.export h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.export__form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 12px;
+}
+</style>

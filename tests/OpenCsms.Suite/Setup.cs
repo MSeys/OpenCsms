@@ -9,6 +9,7 @@ using OpenCsms.Suite.Devices;
 using OpenCsms.Suite.Support;
 using ProtoTest.AspNetCore;
 using ProtoTest.Core;
+using ProtoTest.Data;
 using ProtoTest.Devices;
 using ProtoTest.Devices.WebSocket;
 using ProtoTest.Devices.WebSocket.AspNetCore;
@@ -19,6 +20,7 @@ using ProtoTest.Messaging.RabbitMq.Testcontainers;
 using ProtoTest.NUnit;
 using ProtoTest.Reporting;
 using ProtoTest.Rest;
+using ProtoTest.Sheets;
 using ProtoTest.Sql.Testcontainers;
 using ProtoTest.Web;
 using BillingWorker = OpenCsms.Billing.Worker.Program;
@@ -35,11 +37,6 @@ public sealed class Setup : ProtoTestAssembly
 {
     protected override void Configure(IProtoHostBuilder builder)
     {
-        // The browser application: the same API on its own loopback listener, because a browser needs a
-        // real address. It is registered after the pieces whose settings it consumes (the database, the
-        // broker, the dashboard build) and before the readiness probe that waits for its address.
-        var dashboard = new LoopbackApplication(CsmsTargets.Dashboard, CsmsApi.Create);
-
         builder
             // Time is a setting here too: the whole run lives at one instant, so the worker's
             // timestamps can be asserted and a product that reads the machine clock fails.
@@ -55,6 +52,17 @@ public sealed class Setup : ProtoTestAssembly
                 RabbitMqOptions.ConnectionStringSetting,
                 "Messaging:RabbitMq:ConnectionString")
             .AddInfrastructure(new DashboardBuildInfrastructure(), DashboardHosting.SettingKey)
+            // The seeded busy month both tenants share: volume for the export journey, composed from
+            // the product's own application services once per run (idempotent across reruns), after
+            // the containers whose connection string it reads.
+            .AddRunSetup("seeded-month", SeededMonth.SeedAsync)
+            // Per-test prerequisites ride the Data provisioners below: the route is the product's
+            // front door (the REST API), so the creation rules stay in the product.
+            .AddData()
+            .AddDataProvisioner<RegisterTariffRequest, TariffResponse, TariffProvisioner>()
+            .AddDataProvisioner<RegisterStationRequest, StationResponse, StationProvisioner>()
+            .AddDataProvisioner<CreateUserRequest, UserResponse, UserProvisioner>()
+            .AddSheets()
             .AddWorkerHost<BillingWorker>("Billing")
             // The OCPP charge points: one in-process transport per (program, application), so the same
             // client registration reaches the gateway through the TestServer here and over the socket
@@ -73,11 +81,24 @@ public sealed class Setup : ProtoTestAssembly
                 .AddRest(rest => rest
                     .AddClient(CsmsTargets.Api)
                     .AddCollector<RestCoverageCollector>()))
-            // The dashboard application carries the browser only; the REST and OCPP clients above keep
-            // resolving the in-process server. The browser follows the published loopback address.
+            // The dashboard application carries the browser, while the REST and OCPP clients above
+            // keep resolving the in-process server. The browser follows the published loopback address,
+            // and the dashboard's own charge-point client reaches the same instance over a real socket,
+            // so the remote-stop click test drives a connected charge point through the UI.
             .AddApplication(CsmsTargets.Dashboard, app => app
-                .AddWeb(options => options.InstallBrowsers = true))
-            .AddInfrastructure(dashboard, dashboard.BaseUrlKey)
+                .AddWeb(options => options.InstallBrowsers = true)
+                .AddDevices(devices => devices
+                    .AddWebSocketClient(CsmsTargets.DashboardChargers, path: "/ocpp/{deviceId}")
+                        .AddDevice<AcCharger>()
+                        .AddProtocol<OcppProtocol>()))
+            // The same API on its own loopback listener, because a browser needs a real address: the
+            // documented api-then-browser recipe. The factory builds from the run's collected
+            // configuration, which arrives as command-line arguments (suite configuration, then the
+            // values the started pieces published: the database, the broker, the dashboard build),
+            // with the loopback --urls pair last. Registered with the address key it fills, so an
+            // environment that configures that key skips the listener and the browser talks to that
+            // environment instead.
+            .AddLoopbackApplication(CsmsTargets.Dashboard, CsmsApi.Create)
             .AddHttpReadiness(CsmsTargets.Dashboard, "/healthz")
             .AddMessaging(messaging => messaging
                 .CaptureAttachments()

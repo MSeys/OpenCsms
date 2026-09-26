@@ -17,9 +17,12 @@ using BillingWorker = OpenCsms.Billing.Worker.Program;
 /// charge point resends is answered without ending or billing anything twice; meter values the
 /// gateway cannot read, or that move backwards, are refused with the OCPP error code their rule
 /// names and leave the session as it was; a charge point no station is registered for is rejected at
-/// boot and refused every other call; and the calls outside the documented subset, or outside the
-/// station's connectors, are refused without touching the store. Each refusal pins the code the
-/// README documents.
+/// boot and refused every other call; the calls outside the documented subset, or outside the
+/// station's connectors, are refused without touching the store; a second start on a charging
+/// connector is answered ConcurrentTx with the running transaction's number, opening nothing; and a
+/// charge point that drops and reconnects five times keeps its session on the registry's live
+/// connection, which a forwarded remote start proves. Each refusal pins the code the README
+/// documents.
 /// </summary>
 [Application(CsmsTargets.Api)]
 [RequiresDevice<AcCharger>]
@@ -34,7 +37,7 @@ public sealed class OcppErrorPaths
     public async Task ADuplicateStopTransactionEndsNothingTwice()
     {
         var op = Proto.Context.Resolve<CsmsOperator>();
-        var charger = Proto.Context.Devices().For<AcCharger>(op.ChargePointId);
+        var charger = Proto.Context.Devices(CsmsTargets.Chargers).For<AcCharger>(op.ChargePointId);
         await charger.BootAsync();
         var session = await charger.PlugInAsync(rfid: "card-42");
         await charger.MeterValuesAsync(energyKwh: 22m);
@@ -107,7 +110,7 @@ public sealed class OcppErrorPaths
     {
         // No station is registered for this identity; the simulator still reaches the gateway, as a
         // real charger on a shared network would.
-        var charger = Proto.Context.Devices().For<AcCharger>(Proto.Context.UniqueName("cp-unknown"));
+        var charger = Proto.Context.Devices(CsmsTargets.Chargers).For<AcCharger>(Proto.Context.UniqueName("cp-unknown"));
 
         var boot = await charger.BootAsync();
 
@@ -134,7 +137,7 @@ public sealed class OcppErrorPaths
     [TestCase(OcppActions.StopTransaction)]
     public async Task AnUnknownChargePointIsRefusedEveryOtherCall(string action)
     {
-        var charger = Proto.Context.Devices().For<AcCharger>(Proto.Context.UniqueName("cp-unknown"));
+        var charger = Proto.Context.Devices(CsmsTargets.Chargers).For<AcCharger>(Proto.Context.UniqueName("cp-unknown"));
 
         // The identity is checked before the payload is read, so the request shape does not matter.
         var error = await charger.RefusedAsync(action, new { });
@@ -159,7 +162,7 @@ public sealed class OcppErrorPaths
     public async Task AnActionOutsideTheSubsetIsRefused(string action)
     {
         var op = Proto.Context.Resolve<CsmsOperator>();
-        var charger = Proto.Context.Devices().For<AcCharger>(op.ChargePointId);
+        var charger = Proto.Context.Devices(CsmsTargets.Chargers).For<AcCharger>(op.ChargePointId);
         await charger.BootAsync();
         var before = await GetStationAsync(op.StationId);
 
@@ -183,7 +186,7 @@ public sealed class OcppErrorPaths
     public async Task AConnectorOutsideTheStationIsRefused()
     {
         var op = Proto.Context.Resolve<CsmsOperator>();
-        var charger = Proto.Context.Devices().For<AcCharger>(op.ChargePointId);
+        var charger = Proto.Context.Devices(CsmsTargets.Chargers).For<AcCharger>(op.ChargePointId);
         await charger.BootAsync();
 
         var status = await charger.RefusedAsync(
@@ -206,6 +209,82 @@ public sealed class OcppErrorPaths
         }
     }
 
+    [ProtoTest]
+    [CsmsOperator]
+    public async Task ASecondStartOnAChargingConnectorIsAnsweredConcurrentTx()
+    {
+        var op = Proto.Context.Resolve<CsmsOperator>();
+        var charger = Proto.Context.Devices(CsmsTargets.Chargers).For<AcCharger>(op.ChargePointId);
+        await charger.BootAsync();
+        var first = await charger.PlugInAsync(rfid: "card-42");
+
+        // Act: the same connector starts again while its transaction is still running. The simulator
+        // refuses to plug in twice, so the double start goes over the raw call, the way a real
+        // charge point's retry would.
+        var again = await charger.StartTransactionAsync(
+            connectorId: 1,
+            idTag: "card-99",
+            meterStartWh: 1_000,
+            timestamp: SuiteClock.Instant);
+
+        // Assert: the gateway names the running transaction instead of opening a second session.
+        var sessions = await GetSessionsAsync(op.StationId);
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(again.IdTagInfo.Status, Is.EqualTo(OcppAuthorizationStatus.ConcurrentTx));
+            Assert.That(again.TransactionId, Is.EqualTo(first.TransactionId), "the answer points at the running transaction");
+            Assert.That(sessions, Has.Count.EqualTo(1), "the refused start opened no second session");
+            Assert.That(sessions[0].TransactionId, Is.EqualTo(first.TransactionId));
+            Assert.That(sessions[0].IsOpen, Is.True, "the first session is untouched");
+            Assert.That(sessions[0].EnergyKwh, Is.Zero, "the refused start moved no energy");
+        }
+    }
+
+    [ProtoTest]
+    [CsmsOperator]
+    public async Task AChargePointThatReconnectsRepeatedlyKeepsItsSessionOnTheLiveConnection()
+    {
+        var op = Proto.Context.Resolve<CsmsOperator>();
+        var charger = Proto.Context.Devices(CsmsTargets.Chargers).For<AcCharger>(op.ChargePointId);
+        await charger.BootAsync();
+        var plugged = await charger.PlugInAsync(rfid: "card-42");
+
+        // Act: the charge point drops and reconnects five times, booting on each new connection. A
+        // reconnect replaces the previous connection in the registry, whichever side notices the
+        // drop first, so the gateway always answers through the live one.
+        for (var attempt = 1; attempt <= 5; attempt++)
+        {
+            await charger.DropConnectionAsync();
+            var boot = await charger.BootAsync();
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(boot.Status, Is.EqualTo(OcppRegistrationStatus.Accepted), $"reconnect {attempt} is answered");
+                Assert.That(boot.Interval, Is.EqualTo(300));
+            }
+        }
+
+        // Assert: the session survived the storm intact, and the registry's single entry reaches the
+        // live connection — the remote start the gateway forwards is answered by this device.
+        var stored = await GetSessionAsync(op.StationId);
+        var startRequest = Proto.Context.Rest()
+            .Body(new { idTag = "card-7", connectorId = 2 })
+            .PostAsync($"/api/stations/{op.StationId}/remote-start");
+        var startPayload = await charger.AnswerRemoteStartAsync();
+        using (var response = await startRequest)
+        {
+            response.Should.HaveHttpStatus(HttpStatusCode.OK).Should.MatchShape(new { status = "Accepted" });
+        }
+
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(stored.TransactionId, Is.EqualTo(plugged.TransactionId));
+            Assert.That(stored.IsOpen, Is.True, "the storm ended no session");
+            Assert.That(stored.EnergyKwh, Is.Zero);
+            Assert.That(startPayload.ConnectorId, Is.EqualTo(2), "the live connection carried the gateway's call");
+            Assert.That(startPayload.IdTag, Is.EqualTo("card-7"));
+        }
+    }
+
     /// <summary>
     /// The malformed meter value in one place: the session first records a good 22 kWh reading, the
     /// sample under test is refused with <paramref name="expectedErrorCode"/>, and the session must
@@ -216,7 +295,7 @@ public sealed class OcppErrorPaths
         string expectedErrorCode)
     {
         var op = Proto.Context.Resolve<CsmsOperator>();
-        var charger = Proto.Context.Devices().For<AcCharger>(op.ChargePointId);
+        var charger = Proto.Context.Devices(CsmsTargets.Chargers).For<AcCharger>(op.ChargePointId);
         await charger.BootAsync();
         var session = await charger.PlugInAsync(rfid: "card-42");
         await charger.MeterValuesAsync(energyKwh: 22m);

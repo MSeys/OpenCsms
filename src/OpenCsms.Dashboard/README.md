@@ -22,11 +22,14 @@ npm run dev       # Vite on http://localhost:5181, proxying /api to a running AP
 | --- | --- |
 | `/sign-in` | Email + password sign-in against `POST /api/auth/sign-in` (HttpOnly cookie). |
 | `/` | The operator's stations, tenant-scoped by the session. |
-| `/stations/:stationId` | One station and its sessions, newest first. |
-| `/invoices` | The operator's invoices, newest first. |
-| `/invoices/:invoiceId` | One invoice's energy, start fee and idle fee. |
-| `/tariffs` | The operator's tariffs. |
+| `/stations/:stationId` | One station and its session timeline (connector, start/end, energy, invoice link); the operator admin also gets the remote-start panel, viewers do not. |
+| `/invoices` | The operator's invoices, newest first, plus the monthly `.xlsx` download. |
+| `/invoices/:invoiceId` | One invoice's calculation lines: energy, start fee, idle fee and total. |
+| `/tariffs` | The operator's tariffs; repricing is the operator admin's form, viewers read. |
 | `/status` | The public network status page; no account needed. |
+
+Mutations (`PUT /api/dashboard/tariffs/{id}`, the remote commands) fetch an anti-forgery token
+from `GET /api/auth/xsrf` first and send it as `X-XSRF-TOKEN`; without one the API answers 400.
 
 Route paths and names are what `DiscoverRoutes` reads from the live Vue Router for page coverage, so
 a rename is visible in the report.

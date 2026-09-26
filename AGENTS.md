@@ -25,8 +25,10 @@ references in source comments — write the reason the code is what it is instea
 ## Provisioning in tests
 
 Per-test prerequisites (tenant, tariff, station, account) go through the product's front door, the
-REST API, so the test proves the real path. Volume seeds that only arrange data for the test's
-subject go through the application services in-process.
+REST API, so the test proves the real path, with the mechanics on `ProtoTest.Data` provisioners
+(`tests/OpenCsms.Suite/Support/CsmsProvisioners.cs`, orchestrated by `CsmsProvisioning`).
+Volume seeds that only arrange data for the test's subject go through the application services
+in-process.
 
 ## Framework docs
 

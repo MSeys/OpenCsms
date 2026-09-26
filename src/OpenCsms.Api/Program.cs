@@ -1,5 +1,6 @@
 namespace OpenCsms.Api;
 
+using System.Security.Claims;
 using OpenCsms.Api.Ocpp;
 using OpenCsms.Application;
 using OpenCsms.Application.Billing;
@@ -8,6 +9,7 @@ using OpenCsms.Application.Commands;
 using OpenCsms.Application.Ports;
 using OpenCsms.Application.Sessions;
 using OpenCsms.Contracts;
+using OpenCsms.Domain;
 using OpenCsms.Infrastructure;
 
 public sealed class Program
@@ -16,17 +18,13 @@ public sealed class Program
 
     /// <summary>
     /// Builds the application without running it, so a suite can host the same entry point on its own
-    /// loopback listener for the browser journeys. <paramref name="configuration"/> is the run's
-    /// collected configuration (database, broker, dashboard build); an environment that already
-    /// provides the values in its own configuration passes none.
+    /// loopback listener for the browser journeys: the suite passes this method to the host's
+    /// loopback registration, and the run's collected configuration (database, broker, dashboard
+    /// build) arrives as command-line arguments, which the builder below reads like any other host.
     /// </summary>
-    public static WebApplication Create(string[] args, IConfiguration? configuration = null)
+    public static WebApplication Create(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
-        if (configuration is not null)
-        {
-            builder.Configuration.AddConfiguration(configuration);
-        }
 
         // The composition root: the store and its ports, then the use cases over them, then the
         // event publisher and the OCPP edge. The API itself only binds requests and maps answers.
@@ -36,6 +34,9 @@ public sealed class Program
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen();
         builder.Services.AddCsmsAuthentication();
+        // The dashboard's cookie mutations (tariff repricing, remote commands) carry this header;
+        // the SPA fetches the token from GET /api/auth/xsrf after sign-in.
+        builder.Services.AddAntiforgery(options => options.HeaderName = "X-XSRF-TOKEN");
         // A standalone run has the system clock; the suite replaces this with the test's clock.
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.Configure<OcppGatewayOptions>(builder.Configuration.GetSection(OcppGatewayOptions.SectionName));
@@ -281,6 +282,30 @@ public sealed class Program
             await invoices.FindAsync(id, cancellationToken) is { } invoice
                 ? Results.Ok(ApiMappings.ToInvoiceResponse(invoice))
                 : Results.NotFound(new { message = $"No invoice '{id}'." }));
+
+        api.MapGet("/invoices/export", async (
+            string? month,
+            ClaimsPrincipal user,
+            MonthlyInvoiceExport export,
+            CancellationToken cancellationToken) =>
+        {
+            // The only cookie-authenticated route on the machine surface: the file is tenant-scoped,
+            // so the tenant comes from the session claim, never from the request.
+            var tenantId = user.FindFirstValue(UserClaimTypes.TenantId)
+                ?? throw new InvalidOperationException("The signed-in user carries no tenant claim.");
+            try
+            {
+                var file = await export.ExportAsync(tenantId, month, cancellationToken);
+                return Results.File(
+                    file.Content,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    file.FileName);
+            }
+            catch (ArgumentException exception)
+            {
+                return Problem(exception);
+            }
+        }).RequireAuthorization(CsmsPolicies.TenantUser);
 
         api.MapIdentityEndpoints();
         app.MapDashboardEndpoints();

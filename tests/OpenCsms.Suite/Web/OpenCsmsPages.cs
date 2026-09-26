@@ -94,11 +94,27 @@ public sealed class StationDetailPage : DashboardPage
 
     public WebElement Back => Element(By.TestId("station-back"));
 
+    public WebElement StationError => Element(By.TestId("station-error"));// The failed load panel.
+
     public WebElement SessionsEmpty => Element(By.TestId("sessions-empty"));
 
     public WebElement SessionsTable => Element(By.TestId("sessions-table"));
 
     public WebComponentCollection<SessionRow> Sessions => Components<SessionRow>(By.TestId("session-row"));
+
+    public WebElement RemoteIdTag => Element(By.TestId("remote-id-tag"));
+
+    public WebElement RemoteConnector => Element(By.TestId("remote-connector"));
+
+    public WebElement RemoteStart => Element(By.TestId("remote-start"));
+
+    public WebElement RemoteStartResult => Element(By.TestId("remote-start-result"));
+
+    public WebElement RemoteStartError => Element(By.TestId("remote-start-error"));
+
+    public WebElement StopResult => Element(By.TestId("session-stop-result"));
+
+    public WebElement StopError => Element(By.TestId("session-stop-error"));
 }
 
 public sealed class SessionRow : WebComponent
@@ -112,9 +128,16 @@ public sealed class SessionRow : WebComponent
     public WebElement Energy => Element(By.TestId("session-energy"));
 
     public WebElement State => Element(By.TestId("session-state"));
+
+    public WebElement Invoice => Element(By.TestId("session-invoice"));
+
+    public WebElement InvoiceNone => Element(By.TestId("session-invoice-none"));
+
+    /// <summary>The operator's stop button; rendered for open sessions of the operator role only.</summary>
+    public WebElement Stop => Element(By.TestId("session-stop"));
 }
 
-/// <summary>The operator's invoices, newest first.</summary>
+/// <summary>The operator's invoices, newest first, with the monthly export download.</summary>
 public sealed class InvoicesPage : DashboardPage
 {
     public WebElement Page => Element(By.TestId("invoices-page"));
@@ -124,6 +147,12 @@ public sealed class InvoicesPage : DashboardPage
     public WebElement Empty => Element(By.TestId("invoices-empty"));
 
     public WebComponentCollection<InvoiceRow> Rows => Components<InvoiceRow>(By.TestId("invoice-row"));
+
+    public WebElement ExportMonth => Element(By.TestId("export-month"));
+
+    public WebElement ExportDownload => Element(By.TestId("export-download"));
+
+    public WebElement ExportError => Element(By.TestId("export-error"));
 }
 
 public sealed class InvoiceRow : WebComponent
@@ -137,7 +166,7 @@ public sealed class InvoiceRow : WebComponent
     public WebElement Total => Element(By.TestId("invoice-total"));
 }
 
-/// <summary>The operator's tariffs.</summary>
+/// <summary>The operator's tariffs; the edit form below renders for the operator role only.</summary>
 public sealed class TariffsPage : DashboardPage
 {
     public WebElement Page => Element(By.TestId("tariffs-page"));
@@ -147,6 +176,28 @@ public sealed class TariffsPage : DashboardPage
     public WebElement Empty => Element(By.TestId("tariffs-empty"));
 
     public WebComponentCollection<TariffRow> Rows => Components<TariffRow>(By.TestId("tariff-row"));
+
+    /// <summary>The first row's edit button; absent for the viewer role.</summary>
+    public WebElement FirstEditButton => Element(By.TestId("tariff-edit"));
+
+    /// <summary>The read-only note viewers see instead of the edit buttons.</summary>
+    public WebElement ReadonlyNote => Element(By.TestId("tariffs-readonly"));
+
+    public WebElement EditForm => Element(By.TestId("tariff-form"));
+
+    public WebElement EnergyInput => Element(By.TestId("tariff-energy-input"));
+
+    public WebElement StartInput => Element(By.TestId("tariff-start-input"));
+
+    public WebElement IdleInput => Element(By.TestId("tariff-idle-input"));
+
+    public WebElement GraceInput => Element(By.TestId("tariff-grace-input"));
+
+    public WebElement Save => Element(By.TestId("tariff-save"));
+
+    public WebElement Cancel => Element(By.TestId("tariff-cancel"));
+
+    public WebElement FormError => Element(By.TestId("tariff-form-error"));
 }
 
 public sealed class TariffRow : WebComponent
@@ -158,6 +209,30 @@ public sealed class TariffRow : WebComponent
     public WebElement StartFee => Element(By.TestId("tariff-start-fee"));
 
     public WebElement IdleFee => Element(By.TestId("tariff-idle-fee"));
+}
+
+/// <summary>One invoice as the billing worker calculated it: every calculation line.</summary>
+public sealed class InvoiceDetailPage : DashboardPage
+{
+    public WebElement Page => Element(By.TestId("invoice-page"));
+
+    public WebElement Title => Element(By.TestId("invoice-title"));
+
+    public WebElement Issued => Element(By.TestId("invoice-issued"));
+
+    public WebElement Session => Element(By.TestId("invoice-session"));
+
+    public WebElement Energy => Element(By.TestId("invoice-energy"));
+
+    public WebElement EnergyAmount => Element(By.TestId("invoice-energy-amount"));
+
+    public WebElement StartFee => Element(By.TestId("invoice-start-fee"));
+
+    public WebElement IdleHours => Element(By.TestId("invoice-idle-hours"));
+
+    public WebElement IdleFee => Element(By.TestId("invoice-idle-fee"));
+
+    public WebElement Total => Element(By.TestId("invoice-total"));
 }
 
 /// <summary>The public status page: no account, the same shell.</summary>
@@ -195,6 +270,27 @@ public sealed class ConnectorRow : WebComponent
     public WebElement State => Element(By.TestId("status-connector-state"));
 }
 
+/// <summary>
+/// Signs the browser in as the viewer <see cref="CsmsViewerAttribute"/> provisioned, and waits for
+/// the shell's session facts to prove the cookie exchange landed with the viewer role.
+/// </summary>
+public sealed class CsmsViewerLogin : IWebLoginStrategy
+{
+    public async ValueTask LoginAsync(WebLoginContext context, CancellationToken cancellationToken = default)
+    {
+        var viewer = context.Execution.Resolve<CsmsViewer>();
+        var page = context.Web.Page<SignInPage>();
+        await page.OpenAsync("/sign-in", cancellationToken);
+        await page.Page.Should.BeVisibleAsync(OpenCsmsDashboard.Wait, cancellationToken);
+        await page.Flow("Sign in as the viewer")
+            .Fill(signIn => signIn.Email, viewer.LoginEmail)
+            .Fill(signIn => signIn.Password, viewer.LoginPassword)
+            .Click(signIn => signIn.Submit)
+            .RunAsync(cancellationToken);
+        await page.SessionUser.Should.BeVisibleAsync(OpenCsmsDashboard.Wait, cancellationToken);
+        await page.SessionRole.Should.HaveTextAsync(UserRoles.Viewer, OpenCsmsDashboard.Wait, cancellationToken);
+    }
+}
 /// <summary>
 /// Signs the browser in through the dashboard's own sign-in screen with the account
 /// <see cref="OpenCsms.Suite.Support.CsmsOperatorAttribute"/> provisioned, and waits for the shell's

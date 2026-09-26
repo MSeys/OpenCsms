@@ -23,6 +23,7 @@ public static class ApplicationServiceCollectionExtensions
 
         // The catalog.
         services.AddScoped<TariffRegistration>();
+        services.AddScoped<TariffEditing>();
         services.AddScoped<StationRegistration>();
         services.AddScoped<TariffReads>();
         services.AddScoped<StationReads>();
@@ -41,10 +42,11 @@ public static class ApplicationServiceCollectionExtensions
         services.AddScoped<SessionEnding>();
         services.AddScoped<SessionReads>();
 
-        // The operator commands and the billing use case.
+        // The operator commands and the billing use cases.
         services.AddScoped<OperatorCommands>();
         services.AddScoped<InvoiceIssuance>();
         services.AddScoped<InvoiceReads>();
+        services.AddScoped<MonthlyInvoiceExport>();
 
         // The accounts.
         services.AddScoped<UserRegistration>();

@@ -49,6 +49,24 @@ public sealed class Tariff
 
     public string Currency { get; private set; }
 
+    /// <summary>
+    /// Reprices the tariff: energy, start fee, idle fee and grace period are replaced together, under
+    /// the same rules creation enforces. Identity, tenant, name and currency never change here, so a
+    /// repriced tariff keeps billing the same tenant in the same currency.
+    /// </summary>
+    public void UpdatePricing(
+        decimal energyPricePerKwh,
+        decimal startFee,
+        decimal idleFeePerHour,
+        TimeSpan idleGracePeriod)
+    {
+        CheckPricing(energyPricePerKwh, startFee, idleFeePerHour, idleGracePeriod);
+        EnergyPricePerKwh = energyPricePerKwh;
+        StartFee = startFee;
+        IdleFeePerHour = idleFeePerHour;
+        IdleGracePeriod = idleGracePeriod;
+    }
+
     public static Tariff Create(
         string tenantId,
         string name,
@@ -60,6 +78,23 @@ public sealed class Tariff
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(tenantId);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        var grace = idleGracePeriod ?? TimeSpan.Zero;
+        CheckPricing(energyPricePerKwh, startFee, idleFeePerHour, grace);
+
+        if (currency.Length != 3)
+        {
+            throw new ArgumentException("A currency is a three-letter code.", nameof(currency));
+        }
+
+        return new Tariff(Guid.NewGuid(), tenantId, name, energyPricePerKwh, startFee, idleFeePerHour, grace, currency.ToUpperInvariant());
+    }
+
+    private static void CheckPricing(
+        decimal energyPricePerKwh,
+        decimal startFee,
+        decimal idleFeePerHour,
+        TimeSpan idleGracePeriod)
+    {
         if (energyPricePerKwh < 0m)
         {
             throw new ArgumentOutOfRangeException(nameof(energyPricePerKwh), energyPricePerKwh, "Energy has no negative price.");
@@ -75,17 +110,9 @@ public sealed class Tariff
             throw new ArgumentOutOfRangeException(nameof(idleFeePerHour), idleFeePerHour, "An idle fee cannot be negative.");
         }
 
-        var grace = idleGracePeriod ?? TimeSpan.Zero;
-        if (grace < TimeSpan.Zero)
+        if (idleGracePeriod < TimeSpan.Zero)
         {
-            throw new ArgumentOutOfRangeException(nameof(idleGracePeriod), grace, "An idle grace period cannot be negative.");
+            throw new ArgumentOutOfRangeException(nameof(idleGracePeriod), idleGracePeriod, "An idle grace period cannot be negative.");
         }
-
-        if (currency.Length != 3)
-        {
-            throw new ArgumentException("A currency is a three-letter code.", nameof(currency));
-        }
-
-        return new Tariff(Guid.NewGuid(), tenantId, name, energyPricePerKwh, startFee, idleFeePerHour, grace, currency.ToUpperInvariant());
     }
 }

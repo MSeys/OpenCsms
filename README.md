@@ -14,8 +14,8 @@ The point is the *one suite, many environments* promise, without `if` statements
 
 | Mode | API | PostgreSQL & RabbitMQ | State |
 | --- | --- | --- | --- |
-| In-process + Testcontainers | hosted by the suite (`AddAspNetCoreServer`) | started by the suite (Testcontainers) | verified: 41/41 green, twice, fresh containers, Chromium journeys included (R3.1) |
-| Configured | hosted by the suite | an environment you provide through configuration; the suite's containers skip | verified twice, 41/41, one persistent database (R3.1) |
+| In-process + Testcontainers | hosted by the suite (`AddAspNetCoreServer`) | started by the suite (Testcontainers) | verified: 64/64 green, twice, fresh containers, seven Chromium journeys included (R3.4) |
+| Configured | hosted by the suite | an environment you provide through configuration; the suite's containers skip | verified twice, 64/64, one persistent database (R3.4) |
 | Container topology (planned) | a container | containers, `docker compose` / Aspire | M4 |
 | Published (planned) | a staging URL via `ProtoTest:Applications:Csms:BaseUrl` | the staging stack | M4 |
 
@@ -26,8 +26,12 @@ seen; the framework gap that remains (the worker's `Program.Main`) is in the gap
 
 ## Status
 
-M1 and M2 are done, and M3 is underway: R3.0's layering is in (below) and R3.1 added the operator
-dashboard's shell, the product's sign-in and roles, and the two browser journeys. The OCPP 1.6J
+M1 and M2 are done, and M3's dashboard work is done through R3.2: R3.0's layering is in (below),
+R3.1 added the dashboard shell, sign-in and roles with the two browser journeys, and R3.2 added
+the views' depth (the session timeline with invoice links, the invoice calculation lines, tariff
+repricing for the operator admin with an honest viewer UI), the monthly `.xlsx` export asserted
+through Sheets, the seeded busy month behind it, and the multi-tenancy and viewer-restriction
+journeys. The OCPP 1.6J
 gateway, the charge-point simulator's journey surface and the device-fit proof are in (R2.1/R2.2),
 including the idle-fee journeys that advance the injected test clock instead of sleeping, and the
 error paths — a duplicate StopTransaction, malformed MeterValues, an unknown charge point,
@@ -38,11 +42,14 @@ refuses the call is `502`, no answer within the configured timeout is `504`, and
 authorization decision (for example `Blocked`) is the `200` body's status, not a failure. The
 gateway bills each session from the connector register it started at, so a second session on a
 connector invoices its own energy only (R2.3). The suite is green
-(`dotnet test tests/OpenCsms.Suite` → 41/41): container mode verified twice with fresh Testcontainers
-including the two Chromium journeys (`artifacts/gates/opencsms-container-20260926-205015.log` and
-`opencsms-container-20260926-205048.log`), and configured mode verified twice against one persistent
-database (`opencsms-configured-20260926-205124.log` and `opencsms-configured-20260926-205144.log`) —
-the Setup is the same code either way. The milestones below are the ones in the
+(`dotnet test tests/OpenCsms.Suite` → 57/57, domain 52/52): container mode verified twice with
+fresh Testcontainers including the five Chromium journeys
+(`artifacts/gates/opencsms-container-20260926-230024.log` and
+`artifacts/gates/opencsms-container-20260926-230055.log`), and configured mode verified twice
+against one persistent database (`artifacts/gates/opencsms-configured-20260926-230155.log` and
+`artifacts/gates/opencsms-configured-20260926-230216.log`; the second run reused the first run's
+seed, which is the seeder's idempotency proof) — the Setup is the same code either way. The milestones
+below are the ones in the
 [reference demo brief](https://github.com/MSeys/ProtoTest) — this README tracks them honestly.
 
 **Layering (R3.0).** The solution is concentric layers, and a project depends only inward:
@@ -72,7 +79,7 @@ untested.
 
 - [x] M1 — CSMS API + PostgreSQL + billing worker + REST suite + one journey
 - [x] M2 — OCPP gateway + charge-point simulator + idle-fee journey
-- [ ] M3 — dashboard + monthly export + browser journeys (R3.0a–d: layering; R3.1: shell, roles and browser wiring)
+- [x] M3 — dashboard + monthly export + browser journeys (R3.0a–d: layering; R3.1: shell, roles and browser wiring; R3.2: view depth, tariff repricing, the `.xlsx` export with Sheets assertions, the seeded month, the viewer and multi-tenancy journeys)
 - [ ] M4 — container topology + deployed mode + fault injection + nightly CI
 
 ## OCPP 1.6J subset
@@ -130,8 +137,12 @@ declares `DiscoverRoutes`, so page coverage comes from the live Vue Router.
 password (PBKDF2-SHA256 hashes in the `Users` table) for an HttpOnly cookie; `GET /api/auth/session`
 answers the SPA, `POST /api/auth/sign-out` clears it. A user is `operator` (admin) or `viewer`.
 `POST /api/users` provisions an account; until M4 gives the management API credentials of its own it
-sits on the same unauthenticated surface as `/api/tariffs` and `/api/stations`, and the suite's
-`CsmsOperatorAttribute` uses it so every test's operator has a login.
+sits on the same unauthenticated surface as `/api/tariffs` and `/api/stations`, and the suite
+provisions every test's operator through it — the routes stay the front door, with the mechanics
+on `ProtoTest.Data` provisioners (`tests/OpenCsms.Suite/Support/CsmsProvisioners.cs`, orchestrated
+by `CsmsProvisioning` for `CsmsOperatorAttribute`, the neighbor tenants, the viewers and the
+contract tests). Provisioned rows stay, because the API has no delete route; unique names keep
+reruns against a database that outlives the test process independent.
 
 **The read surface.** `/api/dashboard/{stations,stations/{id},stations/{id}/sessions,invoices,invoices/{id},tariffs}`
 requires a signed-in session and scopes every query to the session's tenant claim — a tenant is
@@ -139,22 +150,67 @@ never taken from the request. `/api/status/stations` is the public page: station
 identities, last-seen stamps and connector statuses, no tenant or pricing detail. The
 operator commands are mirrored for the dashboard under `/api/dashboard` and require the `operator`
 role: a viewer gets `403` before anything reaches a charge point, and the station is scoped to the
-session's tenant first, so another tenant's station answers `404` exactly like an unknown one. The
-machine API's `/api/stations/{id}/remote-start` and `/api/sessions/{id}/remote-stop` are unchanged.
+session's tenant first, so another tenant's station answers `404` exactly like an unknown one
+(`TenantIsolation` pins both directions). The machine API's
+`/api/stations/{id}/remote-start` and `/api/sessions/{id}/remote-stop` are unchanged.
+
+**The views' depth (R3.2).** The station screen is the session timeline — connector, start/end,
+energy, state and the invoice link for billed sessions (matched client-side from the invoice
+list) — and the operator admin gets the remote-start panel on it; viewers never see the panel.
+The invoice screen shows the worker's calculation lines (energy, start fee, idle fee, total).
+Tariff repricing is the operator admin's form on the tariffs screen
+(`PUT /api/dashboard/tariffs/{id}`, `operator` role, tenant-scoped `404`, negative prices `400`);
+viewers read the table with a read-only note instead. Stored invoices keep the prices they were
+billed at — only new sessions bill at the new ones (`TariffEditingContracts` bills one session
+each side of a repricing to prove it). Cookie mutations carry the anti-forgery token the SPA
+fetches from `GET /api/auth/xsrf` as `X-XSRF-TOKEN`; without one the API answers `400`.
+
+| Screen | operator admin | viewer |
+| --- | --- | --- |
+| Stations, station timeline, invoices, invoice lines, tariffs, public status | reads | reads |
+| Remote start/stop, tariff repricing, monthly download | acts (token + role) | hidden in the UI, `403` at the API |
+
+**The monthly export (R3.2).** `GET /api/invoices/export?month=YYYY-MM` answers the tenant's
+month as a real `.xlsx` download (`invoices-YYYY-MM.xlsx`): an `Invoices` sheet with one row per
+stored invoice issued inside the UTC month (oldest first) and a `Summary` sheet with the month,
+the row count and the summed total. The composition lives in the `MonthlyInvoiceExport`
+application use case over the invoice queries; the spreadsheet mechanics live in Infrastructure
+(`ClosedXmlInvoiceExportWriter`, behind the `IInvoiceExportWriter` port), because the workbook
+library is an infrastructure detail the application never sees. ClosedXML was chosen for its
+small surface and its MIT license — EPPlus's noncommercial license does not fit this MIT
+repository, and raw OpenXML is needlessly verbose for a two-sheet table. Totals are written as
+literal values, never formulas, so the file carries exactly what the invoice rows hold. A missing
+or malformed month is `400`, anonymous reads are `401`, and the numbers always match the invoice
+rows — the journey sums both sides.
+
+**The seeded busy month (R3.2).** The suite seeds volume once per run
+(`Support/SeededMonth.cs`, an `AddRunSetup` step after the containers): two tenants sharing May
+2030, each with a tariff, a station, an operator admin and 120 billed sessions (5–25 kWh, no idle
+fee), composed from the product's own application services in-process against the run's database.
+The worker and the broker are not involved — issuance runs with its events dropped. The seeded
+tariff's name is the idempotency marker: a rerun against a database that already holds it stores
+nothing, so configured-mode reruns share one seed. Per-test prerequisites still go through the
+REST front door — the same routes, with the mechanics on `ProtoTest.Data` provisioners; the seed
+is volume only.
 
 **How the suite drives the browser.** The `Dashboard` application is the same API hosted on a
-loopback listener inside the test process (`Support/LoopbackApplication.cs`, the documented
-api-then-browser recipe) and publishes the address it bound as its `BaseUrl`; the readiness probe
-waits on the real `/healthz`, and the browser session resolves that one address. The in-process
-`AddAspNetCoreServer` application named `Csms` stays the REST and OCPP server, so provisioning and
-the device journeys are untouched. The loopback instance receives the run's collected configuration
-(database, broker, dashboard build), because a hand-built `WebApplication` has no initializer
-forwarding it.
+loopback listener inside the test process (`AddLoopbackApplication` from `ProtoTest.AspNetCore`,
+the documented api-then-browser recipe: the suite passes the API's `Create` method and the run's
+collected configuration arrives as command-line arguments) and publishes the address it bound as
+its `BaseUrl`; the readiness probe waits on the real `/healthz`, and the browser session resolves
+that one address. The in-process `AddAspNetCoreServer` application named `Csms` stays the REST and
+OCPP server, so provisioning and the device journeys are untouched. The loopback's
+configuration arrives as arguments because a hand-built `WebApplication` has no initializer
+forwarding it. One browser journey needs more: the remote-stop click test drives a connected
+charge point through the dashboard's own remote command, and the loopback instance never sees the
+in-process journeys' connections, so a second device client hangs off `Dashboard` and reaches the
+loopback over a real socket - the in-process client stays the clock-true path the OCPP journeys
+assert against.
 
 ## Gap log
 
-This is the honest state: M1 and M2 are done, and the reference-suite audit's fixes (R1a) landed before
-new feature work.
+This is the honest state: M1, M2 and M3's dashboard work are done, and the reference-suite
+audit's fixes (R1a) landed before new feature work.
 
 - The worker's `Program.Main` cannot see the run's configuration before `Build()` (ProtoTest.Hosting
   P1-gap); the product reads its connection string inside the EF options factory. The fix is Phase 2
@@ -172,17 +228,25 @@ new feature work.
   ProtoTest's tap binds destinations as exchanges and `ProtoMessage` drops the routing key, so a queue
   cannot be awaited through it. The `(exchange, routingKey)` addition is recorded in plan-5 (REF-5) for
   a future release; the helper carries the assertion until then.
-- Published mode is planned (M4). The rest of OCPP beyond the named refusals, the reconnect storm,
-  the dashboard's deeper views, payments and the `.xlsx` export have no tests yet —
-  [COVERAGE.md](COVERAGE.md) lists the untested surface.
-- **The dashboard's views are the R3.1 shell.** The session timeline detail, invoice view depth,
-  tariff editing, the monthly `.xlsx` export and its Sheets assertions, a viewer-restriction journey
-  and the multi-tenancy negative test are R3.2/R3.3; the roles and the tenant scoping they exercise
-  are already in the API.
-- **The management API is unauthenticated until M4.** `/api/tariffs`, `/api/stations`,
-  `/api/sessions`, `/api/users` and the remote commands are the device/operator machine surface with
-  no credentials yet; the dashboard's own reads and commands are cookie-authenticated. The cookie is
-  `SameSite=Lax`; anti-forgery tokens land with the first dashboard mutation in R3.2.
+- **A browser download is named binary content.** `WebDownload` implements `IProtoBinaryContent`
+  (fixed in the framework during M2), so the invoices screen's download journey opens the captured
+  export in one line.
+- Published mode is planned (M4). The rest of OCPP beyond the named refusals, an operator
+  remote start racing a reconnect, and payments have no tests yet — [COVERAGE.md](COVERAGE.md)
+  lists the untested surface.
+- **The dashboard's views are done through R3.4.** The timeline, invoice lines, tariff repricing,
+  the export with its Sheets assertions, the viewer journey and the multi-tenancy negative test
+  are in; the invoices screen's download button is clicked in Chromium with the downloaded bytes
+  asserted as real cells, and the remote-stop button drives a connected charge point from the
+  station screen.
+- **The export speaks the invoice API's names.** The `Invoices` sheet headers are `IssuedAtUtc`,
+  `StartFeeAmount` and `IdleFeeAmount`, exactly as `InvoiceResponse` names them; the per-row
+  journey fails on a swapped or renamed column.
+- **The machine management API is unauthenticated until M4.** `/api/tariffs`, `/api/stations`,
+  `/api/sessions`, `/api/users` and the machine remote commands are the device/operator surface
+  with no credentials yet; the dashboard's own reads, its tariff repricing, its remote commands
+  and the export are cookie-authenticated, tenant-scoped and (for the mutations) role-checked.
+  The cookie is `SameSite=Lax`; the dashboard's mutations carry anti-forgery tokens since R3.2.
 
 ## Running
 
