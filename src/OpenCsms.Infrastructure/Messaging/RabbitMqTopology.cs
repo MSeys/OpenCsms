@@ -61,5 +61,77 @@ public static class RabbitMqTopology
             routingKey: string.Empty,
             arguments: null,
             cancellationToken: cancellationToken);
+
+        // The notification queues each get their own dead-letter path, so an undeliverable
+        // notification is inspectable instead of looping through the consumer's retries forever.
+        await channel.ExchangeDeclareAsync(
+            CsmsEvents.NotificationsDeadLetterExchange,
+            ExchangeType.Fanout,
+            durable: true,
+            autoDelete: false,
+            arguments: null,
+            cancellationToken: cancellationToken);
+
+        await channel.QueueDeclareAsync(
+            CsmsEvents.NotificationInvoiceIssuedQueue,
+            durable: true,
+            exclusive: false,
+            autoDelete: false,
+            arguments: new Dictionary<string, object?>
+            {
+                ["x-dead-letter-exchange"] = CsmsEvents.NotificationsDeadLetterExchange
+            },
+            cancellationToken: cancellationToken);
+        await channel.QueueBindAsync(
+            CsmsEvents.NotificationInvoiceIssuedQueue,
+            CsmsEvents.Exchange,
+            CsmsEvents.InvoiceIssuedRoutingKey,
+            arguments: null,
+            cancellationToken: cancellationToken);
+
+        await channel.QueueDeclareAsync(
+            CsmsEvents.NotificationBillingFailedQueue,
+            durable: true,
+            exclusive: false,
+            autoDelete: false,
+            arguments: new Dictionary<string, object?>
+            {
+                ["x-dead-letter-exchange"] = CsmsEvents.NotificationsDeadLetterExchange
+            },
+            cancellationToken: cancellationToken);
+        await channel.QueueBindAsync(
+            CsmsEvents.NotificationBillingFailedQueue,
+            CsmsEvents.Exchange,
+            CsmsEvents.BillingFailedRoutingKey,
+            arguments: null,
+            cancellationToken: cancellationToken);
+
+        await channel.QueueDeclareAsync(
+            CsmsEvents.NotificationInvoiceIssuedDeadLetterQueue,
+            durable: true,
+            exclusive: false,
+            autoDelete: false,
+            arguments: null,
+            cancellationToken: cancellationToken);
+        await channel.QueueBindAsync(
+            CsmsEvents.NotificationInvoiceIssuedDeadLetterQueue,
+            CsmsEvents.NotificationsDeadLetterExchange,
+            routingKey: string.Empty,
+            arguments: null,
+            cancellationToken: cancellationToken);
+
+        await channel.QueueDeclareAsync(
+            CsmsEvents.NotificationBillingFailedDeadLetterQueue,
+            durable: true,
+            exclusive: false,
+            autoDelete: false,
+            arguments: null,
+            cancellationToken: cancellationToken);
+        await channel.QueueBindAsync(
+            CsmsEvents.NotificationBillingFailedDeadLetterQueue,
+            CsmsEvents.NotificationsDeadLetterExchange,
+            routingKey: string.Empty,
+            arguments: null,
+            cancellationToken: cancellationToken);
     }
 }

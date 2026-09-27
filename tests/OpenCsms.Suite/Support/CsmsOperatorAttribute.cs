@@ -6,23 +6,24 @@ using ProtoTest.Core;
 /// Provisions this test's isolated operator - a tenant with its machine credential, its tariff, its
 /// station and the operator admin's dashboard account - with names from
 /// <see cref="ProtoExecutionContext.UniqueName(string, int)"/>, so a journey can run repeatedly
-/// against a database that outlives the test process. The test reads the provisioned
-/// <see cref="CsmsOperator"/>, including the login the browser journeys sign in with and the key the
-/// management calls carry. The orchestration is <see cref="CsmsProvisioning"/> over the Data
-/// provisioners; the route stays the product's front door. Provisioning runs before every other setup
-/// attribute (<c>Order</c> -100), because a login needs the account this attribute creates.
+/// against a database that outlives the test process. <see cref="CsmsOperatorAttribute"/> groups this
+/// attribute, so a test declares only the configuration it wants. The orchestration is
+/// <see cref="CsmsProvisioning"/> over the Data provisioners; the route stays the product's front
+/// door. Provisioning runs before every other setup attribute (<c>Order</c> -100), because a login
+/// needs the account this attribute creates.
 /// </summary>
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, Inherited = true)]
-public sealed class CsmsOperatorAttribute : ProtoAttribute
+public sealed class CsmsOperatorProvisioningAttribute : ProtoAttribute
 {
-    public CsmsOperatorAttribute()
+    public CsmsOperatorProvisioningAttribute(int connectorCount)
     {
+        ConnectorCount = connectorCount;
         // The account must exist before [LoginAs] (order 0) signs in with it.
         Order = -100;
     }
 
     /// <summary>Connectors on the provisioned station; a test can ask for a smaller or larger one.</summary>
-    public int ConnectorCount { get; init; } = 2;
+    public int ConnectorCount { get; }
 
     public override async Task BeforeTestAsync(ProtoExecutionContext context)
     {
@@ -39,6 +40,22 @@ public sealed class CsmsOperatorAttribute : ProtoAttribute
             context.UniqueName("Operator"));
         context.SetContext(provisioned);
     }
+}
+
+/// <summary>
+/// The operator a test acts as: a tenant with its machine credential, tariff, station and operator
+/// admin account. One declaration reads as the test's configuration; the provisioning itself stays a
+/// plain attribute (<see cref="CsmsOperatorProvisioningAttribute"/>) with the parameters passed
+/// through this composite's constructor.
+/// </summary>
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, Inherited = true)]
+public sealed class CsmsOperatorAttribute(int connectorCount = 2) : ProtoCompositeAttribute
+{
+    /// <summary>Connectors on the provisioned station; a test can ask for a smaller or larger one.</summary>
+    public int ConnectorCount { get; } = connectorCount;
+
+    protected override IReadOnlyList<Attribute> Compose() =>
+        [new CsmsOperatorProvisioningAttribute(ConnectorCount)];
 }
 
 /// <summary>

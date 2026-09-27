@@ -25,4 +25,10 @@ public static class CsmsTargets
     /// <see cref="Chargers"/>, whose transport reaches the test server with the test's clock.
     /// </summary>
     public const string DashboardChargers = "DashboardChargers";
+
+    /// <summary>The WireMock fake standing in for the external PSP/email target of invoice-ready notifications.</summary>
+    public const string InvoiceReadyTarget = "InvoiceReadyTarget";
+
+    /// <summary>The WireMock fake standing in for the operator's alerting webhook for billing failures.</summary>
+    public const string BillingFailureTarget = "BillingFailureTarget";
 }

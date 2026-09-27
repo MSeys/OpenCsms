@@ -18,6 +18,7 @@ the same commit as the behavior it describes.
 | `tests/OpenCsms.Suite/Api/TariffEditingContracts.cs` | The tariff repricing contracts (R3.2): anonymous repricing is 401, a viewer with a valid token is 403, an operator without the token is 400, another tenant's tariff is 404, and a negative value in any of the four prices - energy, start fee, idle fee, grace period - is 400 with all four prices provably unchanged. The billing proof bills one session each side of a repricing: the stored invoice keeps 8.80/10.30 while the new session bills 12.10/13.60 at the new energy price. |
 | `tests/OpenCsms.Suite/Api/TenantIsolation.cs` | The multi-tenancy negative test (R3.2): one operator's reads of another tenant's station, station sessions and invoice answer 404 exactly like unknown ids, in both directions, and the station/tariff lists carry only the signed-in tenant's rows. The foreign invoice comes from the run's seeded month and the foreign session is an open REST session, so no broker or worker is needed; the second test pins the seeded tenants against each other (120 invoices each, no shared id). |
 | `tests/OpenCsms.Suite/Api/MachineApiCredentials.cs` | The machine surface's credential contracts (M4.3): the management routes answer 401 without a key and with a key no tenant owns, so the refusals prove the credential rather than a broken route — the same route with the tenant's valid key answers 201, and a signed-in dashboard cookie does not unlock it. A key reaches exactly the tenant it was issued for: another tenant's station and connectors answer 404 like unknown ids, a session start on the foreign station is refused before the station is touched, and the neighbor's key can neither read nor end the test's session, which stays open, while the neighbor's own key does reach its station. The tenant and its one-time key come from `POST /api/tenants`, the product's own registration route. |
+| `tests/OpenCsms.Suite/Journeys/InvoiceNotificationsReachTheExternalTarget.cs` | The notification path (M4.3b), against `ProtoTest.WireMock` fakes standing in for the external targets. Journey one: the billing worker issues an invoice, the notification worker consumes `invoice.issued` and POSTs it to the invoice-ready fake; the request the fake served has the invoice's own path (`/notifications/invoice-ready/{invoiceId}`, matched, answered 202) and its logged body carries the invoice's data — the event discriminator, invoice id, session id, tenant, total, currency and the run clock's instant. Journey two: a `session.ended` naming a session the store does not know is retried and dead-lettered by the billing worker, which publishes `billing.failed`; the notification worker pushes the failure to the alerting fake at the session's path with the recorded reason and the run clock's instant, and the fake accepts it. |
 | `tests/OpenCsms.Suite/Journeys/MonthlyInvoiceExport.cs` | The monthly export journey (R3.2), asserted with `ProtoTest.Sheets` on the real cells: the `Invoices` sheet carries the header plus one row per seeded invoice, the header uses the invoice API's own names (`IssuedAtUtc`, `StartFeeAmount`, `IdleFeeAmount`), the typed model matches every rule, every row falls in 2030-05, every exported row carries its stored row's own numbers (a swapped column fails the per-row check, not just the sum), and the summed total equals the dashboard invoice rows' sum for the same tenant and month, with identical row identity. A month with no invoices still carries the header with zero totals; malformed and missing months are 400; anonymous reads are 401; and the two tenants' exports share no invoice id. |
 | `tests/OpenCsms.Domain.Tests/TariffPricingTests.cs` | The repricing domain rules (R3.2): all four prices are replaced together, identity/tenant/name/currency never change, and a refused update changes nothing. |
 | `tests/OpenCsms.Suite/Web/OperatorDashboardJourney.cs` | The R3.1 browser journey: Chromium signs in on the dashboard's own `/sign-in` screen with the account `CsmsOperatorAttribute` provisioned, the stations list shows the one station this test's tenant owns (name, OCPP identity, connector count) and its detail screen shows the empty session list. The session declares `DiscoverRoutes`, so the report's page inventory comes from the live Vue Router (`/sign-in`, `/`, `/stations/{id}`, `/invoices`, `/invoices/{id}`, `/tariffs`, `/status`). |
@@ -55,17 +56,19 @@ idle-fee/register journeys, the duplicate-stop `EndedAtUtc` assertion, the REST-
 and the browser download journey - so they run where the suite's clock reaches the system under test
 and report as skipped against a running stack; the remote-timeout journey reads the API's effective
 `Ocpp:RemoteCallTimeoutSeconds` instead of assuming the in-process two seconds. The default mode is
-verified with fresh Testcontainers including the seven Chromium journeys (67/67,
-`artifacts/gates/opencsms-container-20260927-212201.log`), configured mode against one persistent
+verified with fresh Testcontainers including the seven Chromium journeys (69/69,
+`artifacts/gates/opencsms-container-20260927-222508.log`; the notification journeys run there too),
+configured mode against one persistent
 docker-run PostgreSQL and RabbitMQ (64/64, `artifacts/gates/opencsms-configured-20260927-195250.log`;
-the seed was already in place, which is the idempotency proof; measured before the outbox and
-machine-credential stages), and published mode by the local rehearsal described in the README
+the seed was already in place, which is the idempotency proof; measured before the outbox,
+machine-credential and notification stages), and published mode by the local rehearsal described in
+the README
 (`artifacts/gates/opencsms-published-20260927-195118.log`: 57 passed, 7 clock journeys skipped,
-the worker runs once; measured before the outbox and machine-credential stages, which are
-in-process-gated). The switch itself is rehearsed too: a fresh-container run with
+the worker runs once; measured before the outbox, machine-credential and notification stages, which
+are in-process-gated). The switch itself is rehearsed too: a fresh-container run with
 `ProtoTest__Seed=off` reports the six seeded journeys skipped and stores no seed
 (`artifacts/gates/opencsms-container-20260927-195618.log`: 58 passed, 6 skipped; measured before
-the outbox and machine-credential stages).
+the outbox, machine-credential and notification stages).
 Its output is recorded under
 `artifacts/gates/opencsms-<mode>-<timestamp>.log` by `eng/run-suite.ps1`, which builds the dashboard
 first so the browser tests always run a fresh bundle.
@@ -108,7 +111,11 @@ Every run writes its evidence under `TestResults/OpenCsms/` beside the built tes
   Since M4.3 the machine side is pinned too (`MachineApiCredentials`).
 - **Machine key rotation and revocation** — a tenant's key is issued once at registration; there is
   no route that rotates or revokes it yet, and the store keeps one key hash per tenant.
-- **Payments / PSP notifications** — not built.
+- **Payments / a real PSP** — not built. The notification worker pushes invoice-ready and
+  billing-failure notifications to configurable HTTP targets, and the suite proves both pushes
+  against WireMock fakes; there is no payment flow, and the target-down fault path (retry
+  exhaustion under a failing target, the notification dead-letter queues, "no lost or duplicated
+  notification") lands with M4.4's fault injection.
 
 ## Recorded, accepted for now
 
@@ -119,12 +126,12 @@ Every run writes its evidence under `TestResults/OpenCsms/` beside the built tes
   of them. The catalog is therefore registered on the client for trace classification only, and the
   subset table in the README is the coverage statement. Revisit when a device protocol can correlate a
   request with its response.
-- **At-most-once `session.ended`.** `/api/sessions/{id}/end` commits the ended session before it
-  publishes (`src/OpenCsms.Api/Program.cs`), so a publish failure leaves the session ended with no
-  event: the client gets a 500, a retry answers 409, and the invoice is never produced. Accepted for
-  M1; a transactional outbox (or a retry) is scheduled with M4's fault-injection work (R1a-02). The
-  OCPP StopTransaction path shares this behavior, because it goes through the same session-ending
-  helper.
+- **`session.ended` delivery is transactional (closed by the outbox).** `/api/sessions/{id}/end`
+  and the OCPP StopTransaction path both end through the same helper, which commits the ended
+  session and its event in one transaction and only then attempts the publish; a failed attempt
+  leaves the event in the store for the dispatcher's bounded-backoff retry, and the worker's
+  idempotency keeps exactly one invoice per session (`OutboxTests` pins the path). The behavior
+  under a broker that stays down is M4.4's fault-injection journey.
 - **Every test connects to the broker at setup.** The run-wide `Tap(CsmsEvents.Exchange)` pre-bind in
   `tests/OpenCsms.Suite/Setup.cs` makes the tap prepare its destination during test setup,
   including for the REST-only contract tests; a broker-less run therefore fails setup there rather

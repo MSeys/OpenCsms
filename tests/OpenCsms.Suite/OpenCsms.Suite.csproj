@@ -34,6 +34,7 @@
     <PackageReference Include="ProtoTest.Sql.Testcontainers" Version="1.1.0-alpha.1" />
     <PackageReference Include="ProtoTest.Web" Version="1.1.0-alpha.1" />
     <PackageReference Include="ProtoTest.Web.Playwright" Version="1.1.0-alpha.1" />
+    <PackageReference Include="ProtoTest.WireMock" Version="1.1.0-alpha.1" />
   </ItemGroup>
 
   <ItemGroup>
@@ -43,6 +44,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenCsms.Api\OpenCsms.Api.csproj" />
     <ProjectReference Include="..\..\src\OpenCsms.Billing.Worker\OpenCsms.Billing.Worker.csproj" />
+    <ProjectReference Include="..\..\src\OpenCsms.Notification.Worker\OpenCsms.Notification.Worker.csproj" />
     <ProjectReference Include="..\..\src\OpenCsms.Infrastructure\OpenCsms.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\OpenCsms.Contracts\OpenCsms.Contracts.csproj" />
     <ProjectReference Include="..\..\src\OpenCsms.Domain\OpenCsms.Domain.csproj" />

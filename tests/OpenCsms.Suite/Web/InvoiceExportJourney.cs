@@ -77,21 +77,22 @@ public sealed class InvoiceExportJourney
 
         Assert.That(download.FileName, Is.EqualTo("invoices-2030-06.xlsx"), "the download carries the month's file name");
 
-        // Assert: the real cells, not the endpoint. The header uses the invoice API's own names,
-        // the one billed row carries its energy and total, and the summary scopes the same month.
+        // Assert: the real cells, not the endpoint. The model declares the header and the summary
+        // labels, the one billed row carries its energy and total, and the summary scopes the same month.
         var workbook = Proto.Context.Sheets().Open(download);
-        var sheet = workbook.Sheet("Invoices");
-        Assert.That(sheet.RowCount, Is.EqualTo(2), "header plus the one billed session");
-        sheet.Range("A1:J1").Should.Match([[
-            "InvoiceId", "SessionId", "IssuedAtUtc", "EnergyKwh", "EnergyAmount",
-            "StartFeeAmount", "IdleHours", "IdleFeeAmount", "Total", "Currency"]]);
-        sheet.Cell("D2").Should.Be(22.0);
-        sheet.Cell("I2").Should.Be(10.3);
+        var model = workbook.Model<InvoiceExportRow>();
+        model.Should.MatchHeaders();
+        model.Should.MatchModel();
+        Assert.That(model.Rows, Has.Count.EqualTo(1), "one row under the header for the one billed session");
+        var row = model.Rows.Single();
+        Assert.That(row.EnergyKwh, Is.EqualTo(22m), "the meter value the journey recorded");
+        Assert.That(row.Total, Is.EqualTo(10.3m), "energy 8.80 plus the 1.50 start fee");
 
-        var summary = workbook.Sheet("Summary");
-        summary.Cell("B1").Should.Be("2030-06");
-        summary.Cell("B2").Should.Be(1.0);
-        summary.Cell("B3").Should.Be(10.3);
-        summary.Cell("B4").Should.Be("EUR");
+        var summary = workbook.KeyValueModel<InvoiceExportSummary>();
+        summary.Should.MatchModel();
+        summary.Column(entry => entry.Month).Should.Be("2030-06");
+        summary.Column(entry => entry.Count).Should.Be(1);
+        summary.Column(entry => entry.Total).Should.Be(10.3m);
+        summary.Column(entry => entry.Currency).Should.Be("EUR");
     }
 }

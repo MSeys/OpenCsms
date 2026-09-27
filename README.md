@@ -5,7 +5,8 @@ for [ProtoTest](https://github.com/MSeys/ProtoTest)** — not as a sample inside
 repository.
 
 It is deliberately a product, not a demo around a feature: a REST API, PostgreSQL, a billing worker on
-RabbitMQ, and the tests that prove a charging session becomes an invoice. ProtoTest is the only test
+RabbitMQ, a notification worker that pushes invoices and billing failures to external HTTP targets,
+and the tests that prove a charging session becomes an invoice. ProtoTest is the only test
 framework. Every framework gap this app pulled is written down here rather than hidden.
 
 ## What this proves
@@ -14,7 +15,7 @@ The point is the *one suite, many environments* promise, without `if` statements
 
 | Mode | API | PostgreSQL & RabbitMQ | State |
 | --- | --- | --- | --- |
-| In-process + Testcontainers | hosted by the suite (`UseInProcess`) | started by the suite (Testcontainers) | verified: 67/67 green, 0 skipped, fresh containers, seven Chromium journeys included (`artifacts/gates/opencsms-container-20260927-212201.log`) |
+| In-process + Testcontainers | hosted by the suite (`UseInProcess`) | started by the suite (Testcontainers) | verified: 69/69 green, 0 skipped, fresh containers, seven Chromium journeys included (`artifacts/gates/opencsms-container-20260927-222508.log`) |
 | Configured | hosted by the suite | an environment you provide through configuration; the suite's containers skip | verified: 64/64, 0 skipped, one persistent database (`artifacts/gates/opencsms-configured-20260927-195250.log`); measured before the outbox and machine-credential stages |
 | Published, locally rehearsed | a real API process at `ProtoTest:Applications:Csms:BaseUrl`; the real `OpenCsms.Billing.Worker` process consumes | running `opencsms-postgres` / `opencsms-rabbitmq` containers addressed by the configured keys | verified: 64 total - 57 passed, 7 clock-dependent journeys skipped, the worker runs once (`artifacts/gates/opencsms-published-20260927-195118.log`), measured before the outbox and machine-credential stages (in-process-gated); no staging target exists yet |
 | Container topology (planned) | a container | containers, `docker compose` / Aspire | M4 |
@@ -43,10 +44,12 @@ endpoints' failure branches are pinned too (R2.4): an offline charge point is `4
 refuses the call is `502`, no answer within the configured timeout is `504`, and a device's own
 authorization decision (for example `Blocked`) is the `200` body's status, not a failure. The
 gateway bills each session from the connector register it started at, so a second session on a
-connector invoices its own energy only (R2.3). The suite is green
-(`dotnet test tests/OpenCsms.Suite` → 67/67, domain 52/52): the default mode with fresh
+connector invoices its own energy only (R2.3). The notification worker closes the product's last
+component: an issued invoice and a billing failure each reach their configured external HTTP target
+through the fakes the suite hosts. The suite is green
+(`dotnet test tests/OpenCsms.Suite` → 69/69, domain 52/52): the default mode with fresh
 Testcontainers and the seven Chromium journeys is recorded at
-`artifacts/gates/opencsms-container-20260927-212201.log`, the configured mode against one
+`artifacts/gates/opencsms-container-20260927-222508.log`, the configured mode against one
 persistent database at `artifacts/gates/opencsms-configured-20260927-195250.log` (its seed was
 already in place, which is the seeder's idempotency proof), and the published rehearsal at
 `artifacts/gates/opencsms-published-20260927-195118.log` — the Setup is the same code in every
@@ -64,7 +67,7 @@ on the side.
 | `src/OpenCsms.Contracts` | The integration events and the API's request/response DTOs; no project references. |
 | `src/OpenCsms.Infrastructure` | The EF `DbContext` with its fluent configurations, migrations and stores, and the RabbitMQ publisher and topology. |
 | `src/OpenCsms.Protocol.Ocpp` | The OCPP 1.6J wire format, translated to application commands. |
-| `src/OpenCsms.Api`, `src/OpenCsms.Billing.Worker` | Thin composition roots: they bind requests and deliveries and map answers, status codes and DTOs. |
+| `src/OpenCsms.Api`, `src/OpenCsms.Billing.Worker`, `src/OpenCsms.Notification.Worker` | Thin composition roots: they bind requests and deliveries and map answers, status codes and DTOs. |
 
 The sub-stages landed in order, each gated and behavior-preserving: **R3.0a** extracted the
 application layer (`d23ec58`), **R3.0b** merged persistence and messaging into infrastructure
@@ -214,6 +217,31 @@ loopback instance never sees the in-process journeys' connections, so a second d
 off `Dashboard` and reaches it over a real socket - the in-process client stays the clock-true path
 the OCPP journeys assert against.
 
+## Notifications (M4.3b)
+
+The notification worker (`src/OpenCsms.Notification.Worker`) consumes the product's events and pushes
+them to external HTTP targets:
+
+| Notification | Trigger | Target |
+| --- | --- | --- |
+| invoice-ready | `invoice.issued`, published by the billing worker after it stores an invoice | `Notifications:InvoiceReadyBaseUrl` — the PSP or email relay: `POST {base}/notifications/invoice-ready/{invoiceId}` |
+| billing failure | `billing.failed`, published by the billing worker when a `session.ended` exhausted its retries and was dead-lettered | `Notifications:BillingFailureBaseUrl` — the operator's alerting webhook: `POST {base}/notifications/billing-failed/{sessionId}` |
+
+Each payload carries the event's own facts — the invoice's ids, total, currency and instant, or the
+session, the reason and the instant — and the entity id in the path, so a target can name what
+arrived. A delivery the target rejects (a non-2xx answer) or that throws is retried in-process three
+times (the consumer loop's republished retry) and then dead-lettered to `notifications.dlx`
+(`notifications.invoice-issued.dlq` or `notifications.billing-failed.dlq`), so a target that stays
+down loses nothing silently. A kind whose base address is not configured stays idle and logs why.
+
+The suite points both addresses at `ProtoTest.WireMock` fakes. They are per-run and listen on ports
+reserved at setup, because the worker reads its addresses once when its host starts; a journey names
+its invoice or session in the request path and reads that request — and its logged body — out of the
+shared log. `InvoiceNotificationsReachTheExternalTarget` proves an issued invoice reaches the
+invoice-ready fake with the invoice's data, and that a session the billing worker gives up on reaches
+the failure fake with the recorded reason. PSP-down fault injection, retry exhaustion and the
+dead-letter assertions land with M4.4.
+
 ## Gap log
 
 This is the honest state: M1, M2 and M3's dashboard work are done, and the reference-suite
@@ -236,7 +264,10 @@ audit's fixes (R1a) landed before new feature work.
 - **A browser download is named binary content.** `WebDownload` implements `IProtoBinaryContent`
   (fixed in the framework during M2), so the invoices screen's download journey opens the captured
   export in one line.
-- Container topology is planned (M4.5) and payments are not built. Published mode is rehearsed
+- Container topology is planned (M4.5) and payments are not built: the notification worker pushes
+  invoice-ready and billing-failure notifications to configurable HTTP targets (the suite's WireMock
+  fakes), but there is no real PSP payment flow, and a target that stays down is dead-lettered rather
+  than replayed — M4.4 pins that fault path. Published mode is rehearsed
   locally (the mode table above) but has no staging target yet; the rest of OCPP beyond the named
   refusals, and an operator remote start racing a reconnect, have no tests yet —
   [COVERAGE.md](COVERAGE.md) lists the untested surface.
@@ -286,14 +317,18 @@ the console and tee it to `artifacts/gates/opencsms-<mode>-<timestamp>.log`. Bot
 dashboard first (`eng/build-dashboard.ps1`: `npm ci` + `npm run build`), so the browser journeys
 always test a fresh bundle; run it alone to build without running the suite.
 
-A published rehearsal points the same suite at a running stack: start the API and the Billing worker
-as real processes (`dotnet src/OpenCsms.Api/bin/Release/net8.0/OpenCsms.Api.dll --urls
-http://127.0.0.1:5080 --contentRoot src/OpenCsms.Api` and `dotnet
-src/OpenCsms.Billing.Worker/bin/Release/net8.0/OpenCsms.Billing.Worker.dll`), export the five keys —
+A published rehearsal points the same suite at a running stack: start the API, the Billing worker and
+the Notification worker as real processes (`dotnet
+src/OpenCsms.Api/bin/Release/net8.0/OpenCsms.Api.dll --urls
+http://127.0.0.1:5080 --contentRoot src/OpenCsms.Api`, `dotnet
+src/OpenCsms.Billing.Worker/bin/Release/net8.0/OpenCsms.Billing.Worker.dll` and `dotnet
+src/OpenCsms.Notification.Worker/bin/Release/net8.0/OpenCsms.Notification.Worker.dll`; the
+notification worker stays idle unless `Notifications__InvoiceReadyBaseUrl` and
+`Notifications__BillingFailureBaseUrl` name real targets), export the five keys —
 `ConnectionStrings__Csms`, `Messaging__RabbitMq__ConnectionString`,
 `ProtoTest__Messaging__RabbitMq__ConnectionString`, `ProtoTest__Applications__Csms__BaseUrl` and
 `ProtoTest__Applications__Dashboard__BaseUrl` — and run `dotnet test tests/OpenCsms.Suite -c Release`.
-The suite's provider chains step aside, the environment runs its own worker and clock, and the
+The suite's provider chains step aside, the environment runs its own workers and clock, and the
 clock-dependent journeys skip; the recorded run is under
 `artifacts/gates/opencsms-published-<timestamp>.log`.
 

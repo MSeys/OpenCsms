@@ -1,162 +1,56 @@
 namespace OpenCsms.Billing.Worker;
 
-using System.Text;
-using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OpenCsms.Application.Billing;
+using OpenCsms.Application.Ports;
 using OpenCsms.Contracts;
 using OpenCsms.Infrastructure.Messaging;
-using RabbitMQ.Client;
-using RabbitMQ.Client.Events;
 
 /// <summary>
 /// Consumes <c>session.ended</c> and hands each delivery to the application's billing use case,
-/// <see cref="InvoiceIssuance"/>. The consumer owns the transport: retries run in-process (republish
-/// with a retries header, then acknowledge), and a message that still fails after
-/// <see cref="MaxRetries"/> retries - that is, on its fourth attempt - is dead-lettered through the
-/// queue's <c>x-dead-letter-exchange</c>, so the worker never spins on a poisonous message. What
-/// billing means, and which failures are retryable, is the use case's; the unique session index there
-/// makes storing idempotent.
+/// <see cref="InvoiceIssuance"/>. The retry and dead-letter semantics are the shared consumer loop's;
+/// what billing means, and which failures are retryable, is the use case's. A session the worker
+/// gives up on is reported as <c>billing.failed</c> before the delivery is dead-lettered, so the
+/// notification worker can tell the operator that an invoice will never appear. The unique session
+/// index in the store makes storing idempotent.
 /// </summary>
 public sealed class SessionEndedConsumer(
     IServiceScopeFactory scopeFactory,
     IConfiguration configuration,
-    ILogger<SessionEndedConsumer> logger) : BackgroundService
+    ILogger<SessionEndedConsumer> logger)
+    : RetryingQueueConsumer<SessionEnded>(scopeFactory, configuration, logger)
 {
-    private const int MaxRetries = 3;
+    protected override string QueueName => CsmsEvents.BillingQueue;
 
-    /// <summary>
-    /// Counts completed retries, not attempts: absent on the first delivery, 1 on the second, and
-    /// <see cref="MaxRetries"/> on the dead-lettered fourth attempt.
-    /// </summary>
-    private const string RetriesHeader = "x-opencsms-retries";
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-
-    private IConnection? _connection;
-    private IChannel? _channel;
-
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async ValueTask HandleAsync(SessionEnded message, CancellationToken cancellationToken)
     {
-        var connectionString = configuration["Messaging:RabbitMq:ConnectionString"]
-            ?? configuration["ConnectionStrings:RabbitMq"]
-            ?? throw new InvalidOperationException(
-                "No broker is configured. Set 'Messaging:RabbitMq:ConnectionString' (the suite's infrastructure does this).");
-        var factory = new ConnectionFactory { Uri = new Uri(connectionString) };
-        _connection = await factory.CreateConnectionAsync(stoppingToken);
-        _channel = await _connection.CreateChannelAsync(cancellationToken: stoppingToken);
-        await RabbitMqTopology.EnsureAsync(_channel, stoppingToken);
-        await _channel.BasicQosAsync(0, 1, false, stoppingToken);
-
-        var consumer = new AsyncEventingBasicConsumer(_channel);
-        consumer.ReceivedAsync += (_, args) => HandleAsync(args, stoppingToken);
-        await _channel.BasicConsumeAsync(
-            CsmsEvents.BillingQueue,
-            autoAck: false,
-            consumer: consumer,
-            cancellationToken: stoppingToken);
-        logger.LogInformation("Billing worker consuming '{Queue}'.", CsmsEvents.BillingQueue);
-
-        await Task.Delay(Timeout.Infinite, stoppingToken);
-    }
-
-    private async Task HandleAsync(BasicDeliverEventArgs args, CancellationToken stoppingToken)
-    {
-        if (_channel is null)
-        {
-            return;
-        }
-
-        var retries = ReadRetries(args.BasicProperties);
-        try
-        {
-            await ProcessAsync(args, stoppingToken);
-            await _channel.BasicAckAsync(args.DeliveryTag, multiple: false, stoppingToken);
-        }
-        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-        {
-            // Shutting down: leave the message unacknowledged so the next run picks it up.
-            throw;
-        }
-        catch (Exception exception)
-        {
-            if (retries >= MaxRetries)
-            {
-                logger.LogError(
-                    exception,
-                    "Session ended message failed after {Attempts} attempt(s); dead-lettering.",
-                    retries + 1);
-                await _channel.BasicNackAsync(args.DeliveryTag, multiple: false, requeue: false, stoppingToken);
-                return;
-            }
-
-            logger.LogWarning(
-                exception,
-                "Session ended message failed (attempt {Attempt}/{Max}); retrying.",
-                retries + 1,
-                MaxRetries + 1);
-            await RepublishAsync(args, retries + 1, stoppingToken);
-            await _channel.BasicAckAsync(args.DeliveryTag, multiple: false, stoppingToken);
-            await Task.Delay(TimeSpan.FromMilliseconds(200 * (retries + 1)), stoppingToken);
-        }
-    }
-
-    private async Task ProcessAsync(BasicDeliverEventArgs args, CancellationToken cancellationToken)
-    {
-        var message = JsonSerializer.Deserialize<SessionEnded>(args.Body.Span, JsonOptions)
-            ?? throw new InvalidOperationException("The session.ended payload is empty.");
-        await using var scope = scopeFactory.CreateAsyncScope();
+        await using var scope = ScopeFactory.CreateAsyncScope();
         var issuance = scope.ServiceProvider.GetRequiredService<InvoiceIssuance>();
         await issuance.IssueAsync(message, cancellationToken);
     }
 
-    private async Task RepublishAsync(BasicDeliverEventArgs args, int retries, CancellationToken cancellationToken)
+    protected override async ValueTask OnTerminalFailureAsync(
+        SessionEnded? message,
+        Exception exception,
+        CancellationToken cancellationToken)
     {
-        var properties = new BasicProperties
+        if (message is null)
         {
-            ContentType = args.BasicProperties.ContentType ?? "application/json",
-            DeliveryMode = DeliveryModes.Persistent,
-            Headers = new Dictionary<string, object?> { [RetriesHeader] = retries }
-        };
-        // The default exchange routes by queue name, so the retry lands where the original did.
-        await _channel!.BasicPublishAsync(
-            string.Empty,
-            CsmsEvents.BillingQueue,
-            mandatory: false,
-            basicProperties: properties,
-            body: args.Body,
-            cancellationToken: cancellationToken);
-    }
-
-    private static int ReadRetries(IReadOnlyBasicProperties properties)
-    {
-        if (properties.Headers is null || !properties.Headers.TryGetValue(RetriesHeader, out var value) || value is null)
-        {
-            return 0;
+            return;
         }
 
-        return value switch
-        {
-            int number => number,
-            long number => (int)number,
-            byte[] bytes when int.TryParse(Encoding.UTF8.GetString(bytes), out var parsed) => parsed,
-            _ => 0
-        };
-    }
-
-    public override async Task StopAsync(CancellationToken cancellationToken)
-    {
-        await base.StopAsync(cancellationToken);
-        if (_channel is not null)
-        {
-            await _channel.DisposeAsync();
-        }
-
-        if (_connection is not null)
-        {
-            await _connection.DisposeAsync();
-        }
+        await using var scope = ScopeFactory.CreateAsyncScope();
+        var publisher = scope.ServiceProvider.GetRequiredService<IEventPublisher>();
+        var clock = scope.ServiceProvider.GetRequiredService<TimeProvider>();
+        await publisher.PublishAsync(
+            CsmsEvents.BillingFailedRoutingKey,
+            new SessionBillingFailed(
+                message.SessionId,
+                message.TenantId,
+                exception.Message,
+                clock.GetUtcNow()),
+            cancellationToken);
     }
 }

@@ -11,9 +11,9 @@ using ProtoTest.Sheets;
 /// <summary>
 /// The monthly export journey: the tenant's <c>.xlsx</c> is downloaded through the product endpoint
 /// and asserted with <see cref="ProtoTest.Sheets"/> - the real cells, not a re-serialized object.
-/// The month scopes every row, the row count matches the seeded busy month, the header uses the
-/// invoice API's own names, every exported row carries its stored row's numbers, and the totals
-/// match the stored invoice rows the dashboard reads. The other tenant's rows never appear.
+/// The model declares the export's headers and the summary's labels, the month scopes every row, the
+/// row count matches the seeded busy month, every exported row carries its stored row's numbers, and
+/// the totals match the stored invoice rows the dashboard reads. The other tenant's rows never appear.
 /// </summary>
 [Application(CsmsTargets.Api)]
 public sealed class MonthlyInvoiceExport
@@ -24,34 +24,33 @@ public sealed class MonthlyInvoiceExport
     {
         await DashboardSession.SignInAsync(SeededMonth.TenantA.LoginEmail, SeededMonth.TenantA.LoginPassword);
 
-        using var download = await Proto.Context.Rest().GetAsync("/api/invoices/export?month=2030-05");
+        using var download = await Proto.Context.Rest()
+            .GetAsync($"/api/invoices/export?month={SeededMonth.MonthText}");
         download.Should.HaveHttpStatus(HttpStatusCode.OK);
         Assert.That(
             download.ContentHeaders.ContentType?.MediaType,
             Is.EqualTo("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
 
         var workbook = Proto.Context.Sheets().Open(download);
-        var invoices = workbook.Sheet("Invoices");
-        Assert.That(invoices.RowCount, Is.EqualTo(SeededMonth.SessionsPerTenant + 1), "header plus one row per seeded invoice");
-
-        invoices.Range("A1:J1").Should.Match([[
-            "InvoiceId", "SessionId", "IssuedAtUtc", "EnergyKwh", "EnergyAmount",
-            "StartFeeAmount", "IdleHours", "IdleFeeAmount", "Total", "Currency"]]);
-
-        var model = workbook.Model<ExportRow>();
+        var model = workbook.Model<InvoiceExportRow>();
+        model.Should.MatchHeaders();
         model.Should.MatchModel();
-        Assert.That(model.Rows, Has.Count.EqualTo(SeededMonth.SessionsPerTenant));
+        Assert.That(
+            model.Rows,
+            Has.Count.EqualTo(SeededMonth.SessionsPerTenant),
+            "one row per seeded invoice, under the header the model declares");
         Assert.That(
             model.Rows.Select(row => row.IssuedAtUtc),
             Has.All.Matches<DateTime>(issued => issued.Year == 2030 && issued.Month == 5),
             "every row belongs to the requested month");
         var sheetTotal = model.Rows.Sum(row => row.Total);
 
-        var summary = workbook.Sheet("Summary");
-        summary.Cell("B1").Should.Be(SeededMonth.MonthText);
-        summary.Cell("B2").Should.Be((double)SeededMonth.SessionsPerTenant);
-        summary.Cell("B3").Should.Be((double)sheetTotal);
-        summary.Cell("B4").Should.Be("EUR");
+        var summary = workbook.KeyValueModel<InvoiceExportSummary>();
+        summary.Should.MatchModel();
+        summary.Column(entry => entry.Month).Should.Be(SeededMonth.MonthText);
+        summary.Column(entry => entry.Count).Should.Be(SeededMonth.SessionsPerTenant);
+        summary.Column(entry => entry.Total).Should.Be(sheetTotal);
+        summary.Column(entry => entry.Currency).Should.Be("EUR");
 
         // The file matches the invoice rows themselves: the dashboard list for the same tenant and
         // month carries the same count and the same summed total.
@@ -100,11 +99,13 @@ public sealed class MonthlyInvoiceExport
         download.Should.HaveHttpStatus(HttpStatusCode.OK);
 
         var workbook = Proto.Context.Sheets().Open(download);
-        var invoices = workbook.Sheet("Invoices");
-        Assert.That(invoices.RowCount, Is.EqualTo(1), "a month with no invoices still carries the header");
-        var summary = workbook.Sheet("Summary");
-        summary.Cell("B2").Should.Be(0.0);
-        summary.Cell("B3").Should.Be(0.0);
+        var model = workbook.Model<InvoiceExportRow>();
+        model.Should.MatchHeaders();
+        Assert.That(model.Rows, Is.Empty, "a month with no invoices still carries the header");
+        var summary = workbook.KeyValueModel<InvoiceExportSummary>();
+        summary.Should.MatchModel();
+        summary.Column(entry => entry.Count).Should.Be(0);
+        summary.Column(entry => entry.Total).Should.Be(0m);
     }
 
     [ProtoTest]
@@ -149,22 +150,10 @@ public sealed class MonthlyInvoiceExport
     private static async Task<HashSet<string>> ExportInvoiceIdsAsync(SeededTenant tenant)
     {
         await DashboardSession.SignInAsync(tenant.LoginEmail, tenant.LoginPassword);
-        using var download = await Proto.Context.Rest().GetAsync("/api/invoices/export?month=2030-05");
+        using var download = await Proto.Context.Rest().GetAsync($"/api/invoices/export?month={SeededMonth.MonthText}");
         download.Should.HaveHttpStatus(HttpStatusCode.OK);
-        var model = Proto.Context.Sheets().Open(download).Model<ExportRow>();
+        var model = Proto.Context.Sheets().Open(download).Model<InvoiceExportRow>();
+        model.Should.MatchHeaders();
         return model.Rows.Select(row => row.InvoiceId).ToHashSet(StringComparer.Ordinal);
     }
-
-    [Sheet("Invoices")]
-    private sealed record ExportRow(
-        [property: Column("InvoiceId", Unique = true)] string InvoiceId,
-        [property: Column("SessionId", Unique = true)] string SessionId,
-        [property: Column("IssuedAtUtc")] DateTime IssuedAtUtc,
-        [property: Column("EnergyKwh", Min = 0)] decimal EnergyKwh,
-        [property: Column("EnergyAmount", Min = 0)] decimal EnergyAmount,
-        [property: Column("StartFeeAmount", Min = 0)] decimal StartFeeAmount,
-        [property: Column("IdleHours", Min = 0)] int IdleHours,
-        [property: Column("IdleFeeAmount", Min = 0)] decimal IdleFeeAmount,
-        [property: Column("Total", Min = 0)] decimal Total,
-        [property: Column("Currency", OneOf = ["EUR"])] string Currency);
 }

@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using OpenCsms.Infrastructure.Export;
 using OpenCsms.Infrastructure.Messaging;
+using OpenCsms.Infrastructure.Notifications;
 using OpenCsms.Infrastructure.Persistence;
 
 /// <summary>
@@ -33,6 +34,7 @@ public static class CsmsInfrastructureExtensions
         // even if the API process ends before its own attempt succeeded.
         services.AddHostedService<OutboxDispatcher>();
         services.AddInvoiceExport();
+        services.AddCsmsNotifications();
         // The readiness probe is the one store read the API asks without a use case.
         services.AddScoped<CsmsStoreProbe>();
         return services;

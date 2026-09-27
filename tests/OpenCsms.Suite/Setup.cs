@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using OpenCsms.Api;
 using OpenCsms.Contracts;
 using OpenCsms.Infrastructure;
+using OpenCsms.Infrastructure.Notifications;
 using OpenCsms.Suite.Devices;
 using OpenCsms.Suite.Support;
 using ProtoTest.AspNetCore;
@@ -24,30 +25,46 @@ using ProtoTest.Sheets;
 using ProtoTest.Sql.Testcontainers;
 using ProtoTest.Testcontainers;
 using ProtoTest.Web;
+using ProtoTest.WireMock;
 using BillingWorker = OpenCsms.Billing.Worker.Program;
 using CsmsApi = OpenCsms.Api.Program;
+using NotificationWorker = OpenCsms.Notification.Worker.Program;
 
 /// <summary>
 /// The suite's only environment-specific file, and it has no environment conditionals: every target -
-/// the store, the broker, the API application with its billing worker, the dashboard application -
-/// declares an ordered provider chain, and the first provider whose condition holds serves it. In a
-/// development run the suite's containers start and the application and its worker run in-process; an
-/// environment that exports the declared keys serves the store, the broker and the applications
-/// instead, and runs the worker itself; one Setup in every mode.
+/// the store, the broker, the API application with its billing and notification workers, the
+/// dashboard application - declares an ordered provider chain, and the first provider whose condition
+/// holds serves it. In a development run the suite's containers start and the application and its
+/// workers run in-process; an environment that exports the declared keys serves the store, the broker
+/// and the applications instead, and runs the workers itself; one Setup in every mode.
 /// </summary>
 [SetUpFixture]
 public sealed class Setup : ProtoTestAssembly
 {
     protected override void Configure(IProtoHostBuilder builder)
     {
+        // The notification worker reads its targets once, when its host starts, so the fakes that
+        // serve those targets must listen on ports reserved before the run: one for the PSP/email
+        // target that receives invoice-ready notifications, one for the operator's alerting webhook
+        // that receives billing failures. The addresses travel as run configuration, which the
+        // hosted worker reads like any deployment's.
+        var invoiceReadyPort = LoopbackPort.Reserve();
+        var billingFailurePort = LoopbackPort.Reserve();
+
         builder
             // Time is a setting here too: the whole run lives at one instant, so the worker's
             // timestamps can be asserted and a product that reads the machine clock fails.
             .ConfigureClock(SuiteClock.Seed())
             .ConfigureTracing(trace => trace.OutputPath = Path.Combine("TestResults", "OpenCsms", "opencsms.prototrace"))
             .ConfigureAppConfiguration(configuration => configuration
-                // The environment's exported keys are what make a configured or published run
-                // distinct; the chains below read them and step aside when they are present.
+                // The fake addresses are suite-owned defaults an environment may override; the
+                // environment's exported keys are what make a configured or published run distinct,
+                // so they are added last and win.
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    [NotificationSettings.InvoiceReadyBaseUrlKey] = $"http://127.0.0.1:{invoiceReadyPort}",
+                    [NotificationSettings.BillingFailureBaseUrlKey] = $"http://127.0.0.1:{billingFailurePort}"
+                })
                 .AddEnvironmentVariables())
             // The store and the broker: a configured connection string serves the target, and the
             // suite's own container starts only when the environment does not provide one.
@@ -64,7 +81,12 @@ public sealed class Setup : ProtoTestAssembly
                     .UseContainer(RabbitMqBroker.Container()),
                 RabbitMqOptions.ConnectionStringSetting,
                 "Messaging:RabbitMq:ConnectionString")
-            .AddInfrastructure(new DashboardBuildInfrastructure(), DashboardHosting.SettingKey)
+            .AddInfrastructure(
+                "DashboardBuild",
+                chain => chain
+                    .UseConfigured()
+                    .Use(new ProtoTargetProvider("dashboard-build", new DashboardBuildInfrastructure())),
+                DashboardHosting.SettingKey)
             // The seeded busy month both tenants share: volume for the export journey, composed from
             // the product's own application services once per run (idempotent across reruns), after
             // the store whose connection string it reads. ProtoTest:Seed=off leaves the target
@@ -93,6 +115,9 @@ public sealed class Setup : ProtoTestAssembly
                     // that answers at all answers in milliseconds.
                     .UseSetting("Ocpp:RemoteCallTimeoutSeconds", "2"))
                 .AddWorkerHost<BillingWorker>("Billing")
+                // The notification worker follows the API's winner like the billing worker: hosted
+                // in this process when the application is, run by the environment otherwise.
+                .AddWorkerHost<NotificationWorker>("Notifications")
                 .AddDevices(devices => devices
                     .AddWebSocketClient(CsmsTargets.Chargers, path: "/ocpp/{deviceId}")
                         .AddDevice<AcCharger>()
@@ -122,6 +147,12 @@ public sealed class Setup : ProtoTestAssembly
                 // publish invoice.issued before a test reaches its first AwaitAsync.
                 .Tap(CsmsEvents.Exchange)
                 .UseRabbitMq())
+            // The external notification targets: per-run fakes on the reserved ports, so the hosted
+            // worker's configured addresses stay valid for every test while each journey reads its
+            // own request out of the shared log. A per-run fake keeps its stubs for the run; the
+            // journeys register the catch-all routes their notifications arrive on.
+            .AddWireMock(CsmsTargets.InvoiceReadyTarget, fake => fake.PerRun().Port(invoiceReadyPort))
+            .AddWireMock(CsmsTargets.BillingFailureTarget, fake => fake.PerRun().Port(billingFailurePort))
             .AddSink<JsonReportSink>(sink => sink.OutputPath = Path.Combine(
                 "TestResults", "OpenCsms", "report.json"))
             .AddSink<HtmlReportSink>(sink =>

@@ -4,17 +4,16 @@ using OpenCsms.Domain;
 using ProtoTest.Core;
 
 /// <summary>
-/// Provisions a viewer for the test's operator tenant, after <see cref="CsmsOperatorAttribute"/>
-/// (order -50, between the operator at -100 and the sign-in at 0). The viewer rides the operator's
-/// machine credential, which the provisioning carries for the credential's tenant. Viewer tests sign
-/// in through <see cref="Web.CsmsViewerLogin"/> with the <see cref="CsmsViewer"/> this attribute
-/// stores; the account itself is created through the product's front door, exactly like the
-/// operator's.
+/// Provisions a viewer for the test's operator tenant, after the operator provisioning (order -50,
+/// between the operator at -100 and the sign-in at 0). The viewer rides the operator's machine
+/// credential, which the provisioning carries for the credential's tenant. Viewer tests sign in
+/// through <see cref="Web.CsmsViewerLogin"/> with the <see cref="CsmsViewer"/> this attribute stores;
+/// the account itself is created through the product's front door, exactly like the operator's.
 /// </summary>
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, Inherited = true)]
-public sealed class CsmsViewerAttribute : ProtoAttribute
+public sealed class CsmsViewerProvisioningAttribute : ProtoAttribute
 {
-    public CsmsViewerAttribute()
+    public CsmsViewerProvisioningAttribute()
     {
         Order = -50;
     }
@@ -35,6 +34,18 @@ public sealed class CsmsViewerAttribute : ProtoAttribute
 
         context.SetContext(new CsmsViewer(machine.TenantId, email, password));
     }
+}
+
+/// <summary>
+/// The viewer account a test acts as: a viewer for the operator tenant the test declared. One
+/// declaration reads as the test's configuration; the provisioning itself stays a plain attribute
+/// (<see cref="CsmsViewerProvisioningAttribute"/>), which still needs the operator's machine
+/// credential, so a viewer test declares <see cref="CsmsOperatorAttribute"/> beside it.
+/// </summary>
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, Inherited = true)]
+public sealed class CsmsViewerAttribute : ProtoCompositeAttribute
+{
+    protected override IReadOnlyList<Attribute> Compose() => [new CsmsViewerProvisioningAttribute()];
 }
 
 /// <summary>

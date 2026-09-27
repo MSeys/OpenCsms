@@ -6,6 +6,7 @@
     <Project Path="src/OpenCsms.Contracts/OpenCsms.Contracts.csproj" />
     <Project Path="src/OpenCsms.Domain/OpenCsms.Domain.csproj" />
     <Project Path="src/OpenCsms.Infrastructure/OpenCsms.Infrastructure.csproj" />
+    <Project Path="src/OpenCsms.Notification.Worker/OpenCsms.Notification.Worker.csproj" />
     <Project Path="src/OpenCsms.Protocol.Ocpp/OpenCsms.Protocol.Ocpp.csproj" />
   </Folder>
   <Folder Name="/tests/">
