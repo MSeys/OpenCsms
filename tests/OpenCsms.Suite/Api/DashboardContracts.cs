@@ -40,7 +40,7 @@ public sealed class DashboardContracts
     public async Task TheOperatorReadsTheirStationThroughTheDashboard()
     {
         var op = Proto.Context.Resolve<CsmsOperator>();
-        await SignInAsync(op.LoginEmail, op.LoginPassword);
+        await SignInAsync(op.LoginEmail, op.Password);
 
         using (var stations = await Proto.Context.Rest().GetAsync("/api/dashboard/stations"))
         {
@@ -65,7 +65,7 @@ public sealed class DashboardContracts
         var viewerEmail = $"{Proto.Context.UniqueName("viewer")}@opencsms.test";
         var viewerPassword = Proto.Context.UniqueName("secret");
         await CsmsProvisioning.ProvisionUserAsync(
-            Proto.Context, op.TenantId, viewerEmail, "Viewer", viewerPassword, UserRoles.Viewer);
+            Proto.Context, viewerEmail, "Viewer", viewerPassword, UserRoles.Viewer);
 
         await SignInAsync(viewerEmail, viewerPassword);
 
@@ -87,7 +87,7 @@ public sealed class DashboardContracts
     public async Task AnOperatorReachesTheCommandThroughTheDashboard()
     {
         var op = Proto.Context.Resolve<CsmsOperator>();
-        await SignInAsync(op.LoginEmail, op.LoginPassword);
+        await SignInAsync(op.LoginEmail, op.Password);
 
         var token = await AntiforgeryTokenAsync();
         using var response = await Proto.Context.Rest()

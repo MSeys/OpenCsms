@@ -10,14 +10,13 @@ using OpenCsms.Domain;
 
 /// <summary>
 /// The product's identity surface: sign-in exchanges email and password for the HttpOnly cookie session
-/// the dashboard uses, sign-out clears it, and <c>POST /api/users</c> provisions an account. The
-/// management API has no credentials of its own, so user provisioning is part of that same
-/// unauthenticated management surface as tariffs and stations; the dashboard itself only ever reads
-/// through the cookie. The account rules live in the application; the cookie and the claims live here.
+/// the dashboard uses, sign-out clears it, and <c>POST /api/users</c> provisions an account for the
+/// credential's tenant on the machine surface. The account rules live in the application; the cookie
+/// and the claims live here.
 /// </summary>
 internal static class IdentityEndpoints
 {
-    public static void MapIdentityEndpoints(this IEndpointRouteBuilder api)
+    public static void MapIdentityEndpoints(this IEndpointRouteBuilder api, IEndpointRouteBuilder machine)
     {
         var auth = api.MapGroup("/auth").WithTags("Auth");
         auth.MapPost("/sign-in", SignInAsync);
@@ -25,7 +24,7 @@ internal static class IdentityEndpoints
         auth.MapGet("/session", GetSession).RequireAuthorization(CsmsPolicies.TenantUser);
         auth.MapGet("/xsrf", GetAntiforgeryToken).RequireAuthorization(CsmsPolicies.TenantUser);
 
-        api.MapPost("/users", CreateUserAsync).WithTags("Users");
+        machine.MapPost("/users", CreateUserAsync).WithTags("Users");
     }
 
     private static async Task<IResult> SignInAsync(
@@ -75,6 +74,7 @@ internal static class IdentityEndpoints
 
     private static async Task<IResult> CreateUserAsync(
         CreateUserRequest request,
+        ClaimsPrincipal user,
         UserRegistration registration,
         CancellationToken cancellationToken)
     {
@@ -83,7 +83,7 @@ internal static class IdentityEndpoints
         {
             outcome = await registration.RegisterAsync(
                 new RegisterUserCommand(
-                    request.TenantId,
+                    CsmsTenantClaims.TenantId(user),
                     request.Email,
                     request.DisplayName,
                     request.Password,

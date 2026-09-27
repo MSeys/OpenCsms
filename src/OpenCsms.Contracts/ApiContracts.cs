@@ -1,7 +1,6 @@
 namespace OpenCsms.Contracts;
 
 public sealed record RegisterTariffRequest(
-    string TenantId,
     string Name,
     decimal EnergyPricePerKwh,
     decimal StartFee = 0m,
@@ -10,7 +9,6 @@ public sealed record RegisterTariffRequest(
     string? Currency = null);
 
 public sealed record RegisterStationRequest(
-    string TenantId,
     string ChargePointId,
     string Name,
     int ConnectorCount,
@@ -79,9 +77,8 @@ public sealed record InvoiceResponse(
 /// <summary>A sign-in attempt against the dashboard's own account store.</summary>
 public sealed record SignInRequest(string? Email, string? Password);
 
-/// <summary>Provisions a dashboard account for a tenant; the bootstrap path until user management has a screen.</summary>
+/// <summary>Provisions a dashboard account for the credential's tenant; the bootstrap path until user management has a screen.</summary>
 public sealed record CreateUserRequest(
-    string? TenantId,
     string? Email,
     string? DisplayName,
     string? Password,
@@ -101,6 +98,12 @@ public sealed record UserResponse(
     string DisplayName,
     string Role,
     DateTimeOffset CreatedAtUtc);
+
+/// <summary>Registers a tenant; the tenant id and the machine key are the product's to choose.</summary>
+public sealed record RegisterTenantRequest(string? Name);
+
+/// <summary>The registered tenant and its machine key, shown once; only the key's hash is stored.</summary>
+public sealed record TenantRegistrationResponse(string TenantId, string Name, string ApiKey);
 
 /// <summary>The signed-in user the SPA loads once per page; the cookie itself stays HttpOnly.</summary>
 public sealed record UserSessionResponse(

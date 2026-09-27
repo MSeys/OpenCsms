@@ -4,6 +4,7 @@ using System.Net;
 using OpenCsms.Contracts;
 using OpenCsms.Suite.Support;
 using ProtoTest.Core;
+using ProtoTest.Http;
 using ProtoTest.Messaging;
 using ProtoTest.NUnit;
 using ProtoTest.Rest;
@@ -18,6 +19,7 @@ using BillingWorker = OpenCsms.Billing.Worker.Program;
 /// </summary>
 [Application(CsmsTargets.Api)]
 [CsmsOperator]
+[Auth<CsmsMachineKeyAuthenticator>]
 [RequiresCapability(
     ProtoCapabilityKinds.Broker,
     Reason = "The journey awaits invoice.issued on the broker; configure ProtoTest:Messaging:RabbitMq:ConnectionString.")]

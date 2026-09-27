@@ -17,6 +17,7 @@ the same commit as the behavior it describes.
 | `tests/OpenCsms.Suite/Api/DashboardContracts.cs` | The dashboard's API contracts (R3.1, R3.2): anonymous reads of `/api/dashboard/stations` answer 401 while `/api/status/stations` answers 200 without an account; a signed-in operator reads their own station and its empty session list; a viewer reads the same list (200) but `/api/dashboard/stations/{id}/remote-start` answers 403 before anything reaches a charge point; the operator's own call reaches the product path and answers 409 because the provisioned charge point is not connected. The cookie is what carries the role; the suite signs in through the product's own endpoint, exactly as the SPA does. Since R3.2 the dashboard mutations carry the anti-forgery token from `GET /api/auth/xsrf`, exactly as the SPA sends it. |
 | `tests/OpenCsms.Suite/Api/TariffEditingContracts.cs` | The tariff repricing contracts (R3.2): anonymous repricing is 401, a viewer with a valid token is 403, an operator without the token is 400, another tenant's tariff is 404, and a negative value in any of the four prices - energy, start fee, idle fee, grace period - is 400 with all four prices provably unchanged. The billing proof bills one session each side of a repricing: the stored invoice keeps 8.80/10.30 while the new session bills 12.10/13.60 at the new energy price. |
 | `tests/OpenCsms.Suite/Api/TenantIsolation.cs` | The multi-tenancy negative test (R3.2): one operator's reads of another tenant's station, station sessions and invoice answer 404 exactly like unknown ids, in both directions, and the station/tariff lists carry only the signed-in tenant's rows. The foreign invoice comes from the run's seeded month and the foreign session is an open REST session, so no broker or worker is needed; the second test pins the seeded tenants against each other (120 invoices each, no shared id). |
+| `tests/OpenCsms.Suite/Api/MachineApiCredentials.cs` | The machine surface's credential contracts (M4.3): the management routes answer 401 without a key and with a key no tenant owns, so the refusals prove the credential rather than a broken route — the same route with the tenant's valid key answers 201, and a signed-in dashboard cookie does not unlock it. A key reaches exactly the tenant it was issued for: another tenant's station and connectors answer 404 like unknown ids, a session start on the foreign station is refused before the station is touched, and the neighbor's key can neither read nor end the test's session, which stays open, while the neighbor's own key does reach its station. The tenant and its one-time key come from `POST /api/tenants`, the product's own registration route. |
 | `tests/OpenCsms.Suite/Journeys/MonthlyInvoiceExport.cs` | The monthly export journey (R3.2), asserted with `ProtoTest.Sheets` on the real cells: the `Invoices` sheet carries the header plus one row per seeded invoice, the header uses the invoice API's own names (`IssuedAtUtc`, `StartFeeAmount`, `IdleFeeAmount`), the typed model matches every rule, every row falls in 2030-05, every exported row carries its stored row's own numbers (a swapped column fails the per-row check, not just the sum), and the summed total equals the dashboard invoice rows' sum for the same tenant and month, with identical row identity. A month with no invoices still carries the header with zero totals; malformed and missing months are 400; anonymous reads are 401; and the two tenants' exports share no invoice id. |
 | `tests/OpenCsms.Domain.Tests/TariffPricingTests.cs` | The repricing domain rules (R3.2): all four prices are replaced together, identity/tenant/name/currency never change, and a refused update changes nothing. |
 | `tests/OpenCsms.Suite/Web/OperatorDashboardJourney.cs` | The R3.1 browser journey: Chromium signs in on the dashboard's own `/sign-in` screen with the account `CsmsOperatorAttribute` provisioned, the stations list shows the one station this test's tenant owns (name, OCPP identity, connector count) and its detail screen shows the empty session list. The session declares `DiscoverRoutes`, so the report's page inventory comes from the live Vue Router (`/sign-in`, `/`, `/stations/{id}`, `/invoices`, `/invoices/{id}`, `/tariffs`, `/status`). |
@@ -28,6 +29,7 @@ the same commit as the behavior it describes.
 | `tests/OpenCsms.Suite/Web/PublicStatusJourney.cs` | The R3.1 public journey: with no sign-in and no cookie, the browser opens `/status` and finds the provisioned station's card (name, OCPP identity, the honest "no connector status reported yet" state); the shell offers sign-in and shows no session facts, which is what "public" means here. |
 | `tests/OpenCsms.Suite/Billing/DeadLetterTests.cs` | The worker's negative path, through the raw broker: a `session.ended` for an unknown session (published on the product exchange with the product routing key) is retried three times and dead-lettered; the test consumes `billing.session-ended.dlq` within a bounded wait and asserts the payload session id and the `x-opencsms-retries: 3` header (completed retries; the fourth attempt was dead-lettered). Needs worker and broker, no REST. |
 | `tests/OpenCsms.Suite/Billing/RedeliveryTests.cs` | The worker's republish-on-redelivery path (R1a-01): after the journey's setup created the invoice, the product's own `session.ended` payload is published a second time on the product exchange and routing key; `invoice.issued` must arrive again with the same invoice id, and the store must still hold exactly one invoice row for the session (counted through the product's own data registration). Needs worker and broker. |
+| `tests/OpenCsms.Suite/Billing/OutboxTests.cs` | The session-end outbox under a publish failure (M4.2): the substituted publisher fails the request's own attempt, the end still commits and its event stays pending in the store; the dispatcher retries the row, the retry travels the real broker, the worker bills once, and the row is marked sent. Needs the broker and the worker. |
 | `tests/OpenCsms.Suite/Messaging/RabbitMqEventPublisherTests.cs` | The publisher's recovery (R1a-03): a channel whose connection was closed out from under the publisher is not reused; the next publish opens a new connection and reaches the exchange. Needs the broker only. |
 | `tests/OpenCsms.Domain.Tests/InvoiceCalculatorTests.cs` | Tariff math: energy at the tariff price, the start fee once per session, per-component rounding away from zero, and the idle rule — idle = stop − last meter value − grace, billed at `ceil(hours)` only when strictly positive: within the grace period, exactly at the grace boundary and one second past its edge (one started hour), every started hour beyond it, rounding up to the started hour, and the idle fee's own money rounding. Plus the rejection rules (open session, foreign tariff, regressing meter value, meter after the session ended, end before the last meter value). |
 
@@ -36,12 +38,14 @@ owns its tenant, tariff and station (and its charge point identity, for the OCPP
 messaging awaits match by test-owned ids, so the shared containers, API and worker are the only shared
 state; the idle-fee journeys advance their own per-test clock, seeded from the run, so advanced time
 never leaks into a concurrent test. Per-test prerequisites go through the product's REST front door
-with the mechanics on `ProtoTest.Data` provisioners — input (`RegisterTariffRequest`,
-`RegisterStationRequest`, `CreateUserRequest`) → route (`POST /api/tariffs`, `/api/stations`,
-`/api/users`) → typed result (`TariffResponse`, `StationResponse`, `UserResponse`) — orchestrated
+with the mechanics on `ProtoTest.Data` provisioners — input (`RegisterTenantRequest`,
+`RegisterTariffRequest`, `RegisterStationRequest`, `CreateUserRequest`) → route (`POST /api/tenants`,
+`/api/tariffs`, `/api/stations`, `/api/users`) → typed result (`TenantRegistrationResponse`,
+`TariffResponse`, `StationResponse`, `UserResponse`) — orchestrated
 by `CsmsProvisioning` for the operator attribute, the neighbor tenants, the viewers and the
-contract tests; rows are never deleted (the API has no delete route), so uniqueness comes from the
-per-test names. The seeded busy month is shared read-only state: two tenants
+contract tests; a test's tenant registers first and the key the answer carries is the credential
+every later management call sends. Rows are never deleted (the API has no delete route), so
+uniqueness comes from the per-test names. The seeded busy month is shared read-only state: two tenants
 with 120 May-2030 invoices each, stored once per run by the `seeded-month` run setup step
 (`tests/OpenCsms.Suite/Support/SeededMonth.cs`) from the product's own application services, with
 the seeded tariff's name as the idempotency marker a rerun looks for; `ProtoTest:Seed=off` makes the
@@ -51,14 +55,17 @@ idle-fee/register journeys, the duplicate-stop `EndedAtUtc` assertion, the REST-
 and the browser download journey - so they run where the suite's clock reaches the system under test
 and report as skipped against a running stack; the remote-timeout journey reads the API's effective
 `Ocpp:RemoteCallTimeoutSeconds` instead of assuming the in-process two seconds. The default mode is
-verified with fresh Testcontainers including the seven Chromium journeys (64/64,
-`artifacts/gates/opencsms-container-20260927-195312.log`), configured mode against one persistent
+verified with fresh Testcontainers including the seven Chromium journeys (67/67,
+`artifacts/gates/opencsms-container-20260927-212201.log`), configured mode against one persistent
 docker-run PostgreSQL and RabbitMQ (64/64, `artifacts/gates/opencsms-configured-20260927-195250.log`;
-the seed was already in place, which is the idempotency proof), and published mode by the local
-rehearsal described in the README (`artifacts/gates/opencsms-published-20260927-195118.log`: 57
-passed, 7 clock journeys skipped, the worker runs once). The switch itself is rehearsed too: a
-fresh-container run with `ProtoTest__Seed=off` reports the six seeded journeys skipped and stores no
-seed (`artifacts/gates/opencsms-container-20260927-195618.log`: 58 passed, 6 skipped).
+the seed was already in place, which is the idempotency proof; measured before the outbox and
+machine-credential stages), and published mode by the local rehearsal described in the README
+(`artifacts/gates/opencsms-published-20260927-195118.log`: 57 passed, 7 clock journeys skipped,
+the worker runs once; measured before the outbox and machine-credential stages, which are
+in-process-gated). The switch itself is rehearsed too: a fresh-container run with
+`ProtoTest__Seed=off` reports the six seeded journeys skipped and stores no seed
+(`artifacts/gates/opencsms-container-20260927-195618.log`: 58 passed, 6 skipped; measured before
+the outbox and machine-credential stages).
 Its output is recorded under
 `artifacts/gates/opencsms-<mode>-<timestamp>.log` by `eng/run-suite.ps1`, which builds the dashboard
 first so the browser tests always run a fresh bundle.
@@ -98,16 +105,13 @@ Every run writes its evidence under `TestResults/OpenCsms/` beside the built tes
 - **Multi-tenancy negative** — R3.2: `TenantIsolation` pins the dashboard reads and the
   remote-stop command in both directions (plus seeded-tenant against seeded-tenant), and
   `TenantIsolationJourney` pins the stations list and the foreign station screen in the browser.
+  Since M4.3 the machine side is pinned too (`MachineApiCredentials`).
+- **Machine key rotation and revocation** — a tenant's key is issued once at registration; there is
+  no route that rotates or revokes it yet, and the store keeps one key hash per tenant.
 - **Payments / PSP notifications** — not built.
 
 ## Recorded, accepted for now
 
-- **The management API is unauthenticated until M4.** `/api/tariffs`, `/api/stations`,
-  `/api/sessions`, `/api/users` and the machine remote commands are the device/operator machine
-  surface with no credentials yet (R3.1); the dashboard's reads, its tariff repricing, its remote
-  commands and the monthly export are cookie-authenticated, tenant-scoped and (for the mutations)
-  role-checked, with the cookie `SameSite=Lax` and anti-forgery tokens on the mutations since R3.2.
-  The SPA's sign-in surface is the product's own `/api/auth/sign-in`.
 - **The OCPP catalog drives traces, not the coverage report (framework finding, R2.1).** A call
   result echoes only the message id, so the device framework's frame-only `Classify` cannot attribute
   a matched result to the action that caused it; registering `DeviceCoverageCollector` with the eight

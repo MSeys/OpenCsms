@@ -73,6 +73,7 @@ public sealed class Setup : ProtoTestAssembly
             // Per-test prerequisites ride the Data provisioners below: the route is the product's
             // front door (the REST API), so the creation rules stay in the product.
             .AddData()
+            .AddDataProvisioner<RegisterTenantRequest, TenantRegistrationResponse, TenantProvisioner>()
             .AddDataProvisioner<RegisterTariffRequest, TariffResponse, TariffProvisioner>()
             .AddDataProvisioner<RegisterStationRequest, StationResponse, StationProvisioner>()
             .AddDataProvisioner<CreateUserRequest, UserResponse, UserProvisioner>()

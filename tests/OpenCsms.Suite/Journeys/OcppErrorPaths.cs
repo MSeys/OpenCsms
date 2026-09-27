@@ -7,6 +7,7 @@ using OpenCsms.Suite.Devices;
 using OpenCsms.Suite.Support;
 using ProtoTest.Core;
 using ProtoTest.Devices;
+using ProtoTest.Http;
 using ProtoTest.Messaging;
 using ProtoTest.NUnit;
 using ProtoTest.Rest;
@@ -25,6 +26,7 @@ using BillingWorker = OpenCsms.Billing.Worker.Program;
 /// documents.
 /// </summary>
 [Application(CsmsTargets.Api)]
+[Auth<CsmsMachineKeyAuthenticator>]
 [RequiresDevice<AcCharger>]
 public sealed class OcppErrorPaths
 {

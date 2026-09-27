@@ -2,8 +2,10 @@ namespace OpenCsms.Suite.Billing;
 
 using System.Net;
 using System.Text.Json;
+using OpenCsms.Application.Ports;
 using OpenCsms.Contracts;
 using OpenCsms.Suite.Support;
+using ProtoTest.AspNetCore;
 using ProtoTest.Core;
 using ProtoTest.Http;
 using ProtoTest.Messaging;
@@ -12,28 +14,34 @@ using ProtoTest.Rest;
 using BillingWorker = OpenCsms.Billing.Worker.Program;
 
 /// <summary>
-/// A redelivered <c>session.ended</c> must republish <c>invoice.issued</c> for the same
-/// invoice, and must not store a second invoice. The test runs the journey's setup path once, then
-/// publishes the product's own payload on the product's exchange and routing key again and asserts the
-/// event arrives a second time with the same invoice id while the store still holds one invoice row.
+/// The session-end outbox under a publish failure: the end request commits the ended session and its
+/// <c>session.ended</c> event, the substituted publisher fails the attempt that request makes, and the
+/// event is still delivered - the stored row is retried by the dispatcher - while the worker stores
+/// exactly one invoice. The substituted publisher delegates every later attempt to the product's own
+/// RabbitMQ publisher, so the retry travels the real broker path.
 /// </summary>
 [Application(CsmsTargets.Api)]
 [CsmsOperator]
 [Auth<CsmsMachineKeyAuthenticator>]
+[RequiresInProcess]
 [RequiresCapability(
     ProtoCapabilityKinds.Broker,
-    Reason = "The redelivery is published and awaited on the product exchange; configure the broker.")]
+    Reason = "The retried event travels the product exchange; configure the broker.")]
 [RequiresWorker<BillingWorker>]
-public sealed class RedeliveryTests
+public sealed class OutboxTests
 {
-    private static readonly TimeSpan InvoiceTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan DeliveryTimeout = TimeSpan.FromSeconds(30);
 
     [ProtoTest]
-    public async Task ARedeliveredSessionEndedRepublishesTheSameInvoice()
+    public async Task AFailedPublishIsRetriedByTheDispatcherAndBillsOnce()
     {
         var op = Proto.Context.Resolve<CsmsOperator>();
 
-        // Arrange: the journey's setup path, so a session and its invoice exist.
+        // Substitute the API's publisher for this test: the request's first attempt will fail.
+        var publisher = new FirstAttemptFailsEventPublisher(
+            RabbitMqRawClient.ResolveConnectionString(Proto.Context));
+        Proto.Context.Override<IEventPublisher>(publisher);
+
         var started = await StartSessionAsync(op.StationId, connectorId: 1);
         using (var meter = await Proto.Context.Rest()
                    .Body(new { totalKwh = 22.0m })
@@ -42,6 +50,7 @@ public sealed class RedeliveryTests
             meter.Should.HaveHttpStatus(HttpStatusCode.OK);
         }
 
+        // Act: the end commits the session and its event, then its publish attempt fails.
         SessionResponse ended;
         using (var response = await Proto.Context.Rest().PostAsync($"/api/sessions/{started.Id}/end"))
         {
@@ -49,43 +58,41 @@ public sealed class RedeliveryTests
             ended = response.ReadAsJson<SessionResponse>()!;
         }
 
-        var firstIssued = await AwaitInvoiceIssuedAsync(started.Id);
-        var firstStored = await ReadInvoiceAsync(started.Id);
-
-        // Act: the product publishes session.ended once; publish the same payload a second time by hand.
-        var redelivery = new SessionEnded(
-            started.Id,
-            op.TenantId,
-            op.StationId,
-            started.ConnectorId,
-            started.StartedAtUtc,
-            ended.EndedAtUtc!.Value,
-            ended.EnergyKwh);
-        await using (var broker = await RabbitMqRawClient.ConnectAsync(Proto.Context))
+        // Assert: the failure did not roll the end back, and the event is still in the store.
+        Assert.Multiple(() =>
         {
-            await broker.PublishAsync(CsmsEvents.Exchange, CsmsEvents.SessionEndedRoutingKey, redelivery);
-        }
+            Assert.That(ended.EndedAtUtc, Is.Not.Null, "the end committed even though its publish failed");
+            Assert.That(publisher.Failures, Is.EqualTo(1), "the publisher rejected the request's own attempt");
+        });
+        Assert.That(
+            await CsmsDatabase.CountPendingOutboxAsync(Proto.Context, started.Id),
+            Is.EqualTo(1),
+            "the event is stored and still pending a delivery");
 
-        // Assert: the redelivery republishes the stored invoice and stores nothing new.
-        var secondIssued = await AwaitInvoiceIssuedAsync(started.Id);
-        var secondStored = await ReadInvoiceAsync(started.Id);
+        // Assert: the dispatcher retried the row, the worker billed once, and the row is sent.
+        var issued = await AwaitInvoiceIssuedAsync(started.Id);
+        var stored = await ReadInvoiceAsync(started.Id);
         var invoiceRows = await CsmsDatabase.CountInvoicesAsync(Proto.Context, started.Id);
+        var pending = await AwaitOutboxEmptyAsync(started.Id);
 
         Assert.Multiple(() =>
         {
-            Assert.That(
-                secondIssued.InvoiceId,
-                Is.EqualTo(firstIssued.InvoiceId),
-                "the redelivery republishes the invoice the first delivery stored");
-            Assert.That(
-                secondStored.Id,
-                Is.EqualTo(firstStored.Id),
-                "both REST reads see the same invoice row");
-            Assert.That(
-                invoiceRows,
-                Is.EqualTo(1),
-                "the redelivery must not insert a second invoice row");
+            Assert.That(issued.InvoiceId, Is.EqualTo(stored.Id), "the delivered event belongs to the stored invoice");
+            Assert.That(invoiceRows, Is.EqualTo(1), "the failed attempt and its retry must bill the session once");
+            Assert.That(pending, Is.EqualTo(0), "the dispatcher marked the delivered row as sent");
         });
+    }
+
+    private static async Task<int> AwaitOutboxEmptyAsync(Guid sessionId)
+    {
+        var result = await ProtoPolling.PollAsync(
+            cancellationToken => new ValueTask<int>(
+                CsmsDatabase.CountPendingOutboxAsync(Proto.Context, sessionId, cancellationToken)),
+            pending => pending == 0,
+            DeliveryTimeout,
+            TimeSpan.FromMilliseconds(100),
+            CancellationToken.None);
+        return result.Value;
     }
 
     private static async Task<InvoiceIssued> AwaitInvoiceIssuedAsync(Guid sessionId)
@@ -93,7 +100,7 @@ public sealed class RedeliveryTests
         var message = await Proto.Context.Messaging().AwaitAsync(
             CsmsEvents.Exchange,
             candidate => IsInvoiceIssuedFor(candidate, sessionId),
-            InvoiceTimeout);
+            DeliveryTimeout);
         return message.ReadRequired<InvoiceIssued>();
     }
 

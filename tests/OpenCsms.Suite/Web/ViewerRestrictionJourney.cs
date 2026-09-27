@@ -4,6 +4,7 @@ using System.Net;
 using OpenCsms.Domain;
 using OpenCsms.Suite.Support;
 using ProtoTest.Core;
+using ProtoTest.Http;
 using ProtoTest.NUnit;
 using ProtoTest.Rest;
 using ProtoTest.Web;
@@ -17,6 +18,7 @@ using ProtoTest.Web.Playwright;
 /// </summary>
 [Application(CsmsTargets.Api)]
 [CsmsOperator]
+[Auth<CsmsMachineKeyAuthenticator>]
 [CsmsViewer]
 [WebSession("Default", Application = CsmsTargets.Dashboard, DiscoverRoutes = true)]
 [LoginAs<CsmsViewerLogin>("viewer")]

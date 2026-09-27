@@ -7,6 +7,7 @@ using OpenCsms.Suite.Devices;
 using OpenCsms.Suite.Support;
 using ProtoTest.Core;
 using ProtoTest.Devices;
+using ProtoTest.Http;
 using ProtoTest.NUnit;
 using ProtoTest.Rest;
 using ProtoTest.Web;
@@ -23,6 +24,7 @@ using BillingWorker = OpenCsms.Billing.Worker.Program;
 /// </summary>
 [Application(CsmsTargets.Api)]
 [CsmsOperator]
+[Auth<CsmsMachineKeyAuthenticator>]
 [RequiresDevice<AcCharger>]
 [WebSession("Default", Application = CsmsTargets.Dashboard, DiscoverRoutes = true)]
 [LoginAs<CsmsOperatorLogin>("operator")]

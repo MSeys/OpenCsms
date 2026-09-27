@@ -28,6 +28,10 @@ public static class CsmsInfrastructureExtensions
         ArgumentNullException.ThrowIfNull(services);
         services.AddCsmsPersistence();
         services.AddRabbitMqEventPublisher();
+        // Every host that composes the infrastructure sweeps the outbox for pending events: the API
+        // and the billing worker together guarantee an event committed by the API reaches the broker
+        // even if the API process ends before its own attempt succeeded.
+        services.AddHostedService<OutboxDispatcher>();
         services.AddInvoiceExport();
         // The readiness probe is the one store read the API asks without a use case.
         services.AddScoped<CsmsStoreProbe>();

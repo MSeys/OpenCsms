@@ -53,6 +53,15 @@ internal static class PersistenceServiceCollectionExtensions
         services.AddScoped<UserStore>();
         services.AddScoped<IUserQueries>(provider => provider.GetRequiredService<UserStore>());
         services.AddScoped<IUserCommands>(provider => provider.GetRequiredService<UserStore>());
+
+        services.AddScoped<TenantStore>();
+        services.AddScoped<ITenantQueries>(provider => provider.GetRequiredService<TenantStore>());
+        services.AddScoped<ITenantCommands>(provider => provider.GetRequiredService<TenantStore>());
+
+        // The outbox is scoped like the stores it shares the context with: Enqueue rides the same
+        // unit of work as the state change, and a request can attempt the publish it just committed.
+        services.AddScoped<OutboxStore>();
+        services.AddScoped<IOutbox>(provider => provider.GetRequiredService<OutboxStore>());
         return services;
     }
 }

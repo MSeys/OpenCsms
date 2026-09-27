@@ -14,9 +14,9 @@ The point is the *one suite, many environments* promise, without `if` statements
 
 | Mode | API | PostgreSQL & RabbitMQ | State |
 | --- | --- | --- | --- |
-| In-process + Testcontainers | hosted by the suite (`UseInProcess`) | started by the suite (Testcontainers) | verified: 64/64 green, 0 skipped, fresh containers, seven Chromium journeys included (`artifacts/gates/opencsms-container-20260927-195312.log`) |
-| Configured | hosted by the suite | an environment you provide through configuration; the suite's containers skip | verified: 64/64, 0 skipped, one persistent database (`artifacts/gates/opencsms-configured-20260927-195250.log`) |
-| Published, locally rehearsed | a real API process at `ProtoTest:Applications:Csms:BaseUrl`; the real `OpenCsms.Billing.Worker` process consumes | running `opencsms-postgres` / `opencsms-rabbitmq` containers addressed by the configured keys | verified: 64 total - 57 passed, 7 clock-dependent journeys skipped, the worker runs once (`artifacts/gates/opencsms-published-20260927-195118.log`); no staging target exists yet |
+| In-process + Testcontainers | hosted by the suite (`UseInProcess`) | started by the suite (Testcontainers) | verified: 67/67 green, 0 skipped, fresh containers, seven Chromium journeys included (`artifacts/gates/opencsms-container-20260927-212201.log`) |
+| Configured | hosted by the suite | an environment you provide through configuration; the suite's containers skip | verified: 64/64, 0 skipped, one persistent database (`artifacts/gates/opencsms-configured-20260927-195250.log`); measured before the outbox and machine-credential stages |
+| Published, locally rehearsed | a real API process at `ProtoTest:Applications:Csms:BaseUrl`; the real `OpenCsms.Billing.Worker` process consumes | running `opencsms-postgres` / `opencsms-rabbitmq` containers addressed by the configured keys | verified: 64 total - 57 passed, 7 clock-dependent journeys skipped, the worker runs once (`artifacts/gates/opencsms-published-20260927-195118.log`), measured before the outbox and machine-credential stages (in-process-gated); no staging target exists yet |
 | Container topology (planned) | a container | containers, `docker compose` / Aspire | M4 |
 
 The suite's `Setup` is the same code in every mode: each target - the store, the broker, the API
@@ -44,9 +44,9 @@ refuses the call is `502`, no answer within the configured timeout is `504`, and
 authorization decision (for example `Blocked`) is the `200` body's status, not a failure. The
 gateway bills each session from the connector register it started at, so a second session on a
 connector invoices its own energy only (R2.3). The suite is green
-(`dotnet test tests/OpenCsms.Suite` → 64/64, domain 52/52): the default mode with fresh
+(`dotnet test tests/OpenCsms.Suite` → 67/67, domain 52/52): the default mode with fresh
 Testcontainers and the seven Chromium journeys is recorded at
-`artifacts/gates/opencsms-container-20260927-195312.log`, the configured mode against one
+`artifacts/gates/opencsms-container-20260927-212201.log`, the configured mode against one
 persistent database at `artifacts/gates/opencsms-configured-20260927-195250.log` (its seed was
 already in place, which is the seeder's idempotency proof), and the published rehearsal at
 `artifacts/gates/opencsms-published-20260927-195118.log` — the Setup is the same code in every
@@ -139,12 +139,13 @@ declares `DiscoverRoutes`, so page coverage comes from the live Vue Router.
 **Sign-in and roles.** `POST /api/auth/sign-in` exchanges a tenant-scoped account's email and
 password (PBKDF2-SHA256 hashes in the `Users` table) for an HttpOnly cookie; `GET /api/auth/session`
 answers the SPA, `POST /api/auth/sign-out` clears it. A user is `operator` (admin) or `viewer`.
-`POST /api/users` provisions an account; until M4 gives the management API credentials of its own it
-sits on the same unauthenticated surface as `/api/tariffs` and `/api/stations`, and the suite
-provisions every test's operator through it — the routes stay the front door, with the mechanics
-on `ProtoTest.Data` provisioners (`tests/OpenCsms.Suite/Support/CsmsProvisioners.cs`, orchestrated
-by `CsmsProvisioning` for `CsmsOperatorAttribute`, the neighbor tenants, the viewers and the
-contract tests). Provisioned rows stay, because the API has no delete route; unique names keep
+`POST /api/users` provisions an account and sits on the machine surface: it carries the tenant's API
+key and creates the account for the credential's tenant. The suite registers each test's tenant
+through `POST /api/tenants` — the answer carries the key once — and then provisions the tariff,
+station, operator and viewer through the keyed routes: the routes stay the front door, with the
+mechanics on `ProtoTest.Data` provisioners (`tests/OpenCsms.Suite/Support/CsmsProvisioners.cs`,
+orchestrated by `CsmsProvisioning` for `CsmsOperatorAttribute`, the neighbor tenants, the viewers and
+the contract tests). Provisioned rows stay, because the API has no delete route; unique names keep
 reruns against a database that outlives the test process independent.
 
 **The read surface.** `/api/dashboard/{stations,stations/{id},stations/{id}/sessions,invoices,invoices/{id},tariffs}`
@@ -155,7 +156,9 @@ operator commands are mirrored for the dashboard under `/api/dashboard` and requ
 role: a viewer gets `403` before anything reaches a charge point, and the station is scoped to the
 session's tenant first, so another tenant's station answers `404` exactly like an unknown one
 (`TenantIsolation` pins both directions). The machine API's
-`/api/stations/{id}/remote-start` and `/api/sessions/{id}/remote-stop` are unchanged.
+`/api/stations/{id}/remote-start` and `/api/sessions/{id}/remote-stop` require the tenant's machine
+key and scope the same way, so neither surface can reach the other tenant's rows
+(`MachineApiCredentials` pins the machine side).
 
 **The views' depth (R3.2).** The station screen is the session timeline — connector, start/end,
 energy, state and the invoice link for billed sessions (matched client-side from the invoice
@@ -216,10 +219,11 @@ the OCPP journeys assert against.
 This is the honest state: M1, M2 and M3's dashboard work are done, and the reference-suite
 audit's fixes (R1a) landed before new feature work.
 
-- **Ending a session is at-most-once.** `/api/sessions/{id}/end` commits the ended session before it
-  publishes `session.ended`; if the publish fails the client gets a 500 but the session stays ended and
-  the event is never published, so a retry answers 409 and the invoice is lost. M1 accepts this for now;
-  the fix (a transactional outbox or a retry) is scheduled with M4's fault-injection work.
+- **Ending a session is transactional (outbox, M4.2).** `/api/sessions/{id}/end` stores the ended
+  session and its `session.ended` event in one transaction; the immediate publish attempt may fail
+  without losing the invoice - the dispatcher retries the stored row with a bounded backoff until the
+  broker accepts it, and the worker's idempotency keeps exactly one invoice per session. The
+  publish-failure path is pinned by `OutboxTests`.
 - **Every test connects to the broker at setup.** The run-wide `Tap(CsmsEvents.Exchange)` pre-bind
   makes the suite's tap prepare its destination during test setup, including the REST-only contract
   tests, so a run without a broker fails setup there rather than skipping; the broker capability is
@@ -244,11 +248,17 @@ audit's fixes (R1a) landed before new feature work.
 - **The export speaks the invoice API's names.** The `Invoices` sheet headers are `IssuedAtUtc`,
   `StartFeeAmount` and `IdleFeeAmount`, exactly as `InvoiceResponse` names them; the per-row
   journey fails on a swapped or renamed column.
-- **The machine management API is unauthenticated until M4.** `/api/tariffs`, `/api/stations`,
-  `/api/sessions`, `/api/users` and the machine remote commands are the device/operator surface
-  with no credentials yet; the dashboard's own reads, its tariff repricing, its remote commands
-  and the export are cookie-authenticated, tenant-scoped and (for the mutations) role-checked.
-  The cookie is `SameSite=Lax`; the dashboard's mutations carry anti-forgery tokens since R3.2.
+- **The machine management API requires a per-tenant API key.** `POST /api/tenants` is the one
+  anonymous management route: it registers a tenant and answers with the tenant id and its API key
+  once; only the key's SHA-256 hash is stored. Every other management route (`/api/tariffs`,
+  `/api/stations`, `/api/sessions`, `/api/users`, the invoice reads and the machine remote commands)
+  requires `X-Api-Key` and acts on the credential's tenant — never on a tenant named in the request.
+  A missing or unknown key answers `401`; another tenant's row answers `404` exactly like an unknown
+  one, and a dashboard cookie does not unlock the surface. The suite registers each test's tenant
+  through that route and carries the key on every management call; `MachineApiCredentials` pins the
+  `401`s without a key and with a wrong key, that a refused call stored nothing, and that each key
+  reaches only its own tenant's rows. The dashboard's reads, commands and export stay
+  cookie-authenticated, and the OCPP gateway and public status routes are unchanged.
 
 ## Running
 

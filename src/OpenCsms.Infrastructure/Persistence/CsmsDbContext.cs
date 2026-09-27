@@ -18,6 +18,10 @@ public sealed class CsmsDbContext(DbContextOptions<CsmsDbContext> options) : DbC
 
     public DbSet<User> Users => Set<User>();
 
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
+
+    public DbSet<Tenant> Tenants => Set<Tenant>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Every mapping lives in its own IEntityTypeConfiguration beside the context; the domain

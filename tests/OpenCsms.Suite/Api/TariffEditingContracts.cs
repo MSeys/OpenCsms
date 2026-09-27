@@ -5,6 +5,7 @@ using OpenCsms.Contracts;
 using OpenCsms.Domain;
 using OpenCsms.Suite.Support;
 using ProtoTest.Core;
+using ProtoTest.Http;
 using ProtoTest.Messaging;
 using ProtoTest.NUnit;
 using ProtoTest.Rest;
@@ -19,6 +20,7 @@ using BillingWorker = OpenCsms.Billing.Worker.Program;
 /// the new ones.
 /// </summary>
 [Application(CsmsTargets.Api)]
+[Auth<CsmsMachineKeyAuthenticator>]
 public sealed class TariffEditingContracts
 {
     [ProtoTest]
@@ -44,7 +46,7 @@ public sealed class TariffEditingContracts
     {
         var op = Proto.Context.Resolve<CsmsOperator>();
         var viewer = Proto.Context.Resolve<CsmsViewer>();
-        await DashboardSession.SignInAsync(viewer.LoginEmail, viewer.LoginPassword);
+        await DashboardSession.SignInAsync(viewer.LoginEmail, viewer.Password);
 
         var token = await DashboardSession.AntiforgeryTokenAsync();
         using var response = await Proto.Context.Rest()
@@ -66,7 +68,7 @@ public sealed class TariffEditingContracts
     public async Task RepricingNeedsTheAntiforgeryToken()
     {
         var op = Proto.Context.Resolve<CsmsOperator>();
-        await DashboardSession.SignInAsync(op.LoginEmail, op.LoginPassword);
+        await DashboardSession.SignInAsync(op.LoginEmail, op.Password);
 
         using var response = await Proto.Context.Rest()
             .Body(new
@@ -87,7 +89,7 @@ public sealed class TariffEditingContracts
     {
         var op = Proto.Context.Resolve<CsmsOperator>();
         var other = await TenantProvisioning.ProvisionAsync(Proto.Context, "foreign");
-        await DashboardSession.SignInAsync(op.LoginEmail, op.LoginPassword);
+        await DashboardSession.SignInAsync(op.LoginEmail, op.Password);
 
         var token = await DashboardSession.AntiforgeryTokenAsync();
         using var response = await Proto.Context.Rest()
@@ -109,7 +111,7 @@ public sealed class TariffEditingContracts
     public async Task RepricingRefusesNegativePricesAndChangesNothing()
     {
         var op = Proto.Context.Resolve<CsmsOperator>();
-        await DashboardSession.SignInAsync(op.LoginEmail, op.LoginPassword);
+        await DashboardSession.SignInAsync(op.LoginEmail, op.Password);
 
         var token = await DashboardSession.AntiforgeryTokenAsync();
         using (var response = await Proto.Context.Rest()
@@ -139,7 +141,7 @@ public sealed class TariffEditingContracts
     public async Task RepricingRefusesNegativeFeesAndChangesNothing(string field, decimal value)
     {
         var op = Proto.Context.Resolve<CsmsOperator>();
-        await DashboardSession.SignInAsync(op.LoginEmail, op.LoginPassword);
+        await DashboardSession.SignInAsync(op.LoginEmail, op.Password);
 
         var token = await DashboardSession.AntiforgeryTokenAsync();
         var body = new Dictionary<string, object>
@@ -166,7 +168,7 @@ public sealed class TariffEditingContracts
     public async Task RepricingRefusesANegativeGracePeriodAndChangesNothing()
     {
         var op = Proto.Context.Resolve<CsmsOperator>();
-        await DashboardSession.SignInAsync(op.LoginEmail, op.LoginPassword);
+        await DashboardSession.SignInAsync(op.LoginEmail, op.Password);
 
         var token = await DashboardSession.AntiforgeryTokenAsync();
         using (var response = await Proto.Context.Rest()
@@ -201,7 +203,7 @@ public sealed class TariffEditingContracts
         await AwaitInvoiceAsync(first.Id);
 
         // The repricing itself, through the dashboard's operator endpoint.
-        await DashboardSession.SignInAsync(op.LoginEmail, op.LoginPassword);
+        await DashboardSession.SignInAsync(op.LoginEmail, op.Password);
         var token = await DashboardSession.AntiforgeryTokenAsync();
         using (var repriced = await Proto.Context.Rest()
                    .Header("X-XSRF-TOKEN", token)

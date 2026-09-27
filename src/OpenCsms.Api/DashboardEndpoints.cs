@@ -48,7 +48,7 @@ internal static class DashboardEndpoints
         StationReads stations,
         CancellationToken cancellationToken)
     {
-        var tenantId = TenantId(user);
+        var tenantId = CsmsTenantClaims.TenantId(user);
         var rows = await stations.ListAsync(tenantId, cancellationToken);
         return Results.Ok(rows.Select(ApiMappings.ToDashboardStationResponse));
     }
@@ -59,7 +59,7 @@ internal static class DashboardEndpoints
         StationReads stations,
         CancellationToken cancellationToken)
     {
-        var tenantId = TenantId(user);
+        var tenantId = CsmsTenantClaims.TenantId(user);
         return await stations.FindForTenantAsync(id, tenantId, cancellationToken) is { } station
             ? Results.Ok(ApiMappings.ToDashboardStationResponse(station))
             : Results.NotFound(new { message = $"No station '{id}'." });
@@ -72,7 +72,7 @@ internal static class DashboardEndpoints
         SessionReads sessions,
         CancellationToken cancellationToken)
     {
-        var tenantId = TenantId(user);
+        var tenantId = CsmsTenantClaims.TenantId(user);
         if (!await stations.ExistsForTenantAsync(id, tenantId, cancellationToken))
         {
             return Results.NotFound(new { message = $"No station '{id}'." });
@@ -87,7 +87,7 @@ internal static class DashboardEndpoints
         InvoiceReads invoices,
         CancellationToken cancellationToken)
     {
-        var tenantId = TenantId(user);
+        var tenantId = CsmsTenantClaims.TenantId(user);
         var rows = await invoices.ListByTenantAsync(tenantId, cancellationToken);
         return Results.Ok(rows.Select(ApiMappings.ToInvoiceResponse));
     }
@@ -98,7 +98,7 @@ internal static class DashboardEndpoints
         InvoiceReads invoices,
         CancellationToken cancellationToken)
     {
-        var tenantId = TenantId(user);
+        var tenantId = CsmsTenantClaims.TenantId(user);
         return await invoices.FindForTenantAsync(id, tenantId, cancellationToken) is { } invoice
             ? Results.Ok(ApiMappings.ToInvoiceResponse(invoice))
             : Results.NotFound(new { message = $"No invoice '{id}'." });
@@ -109,7 +109,7 @@ internal static class DashboardEndpoints
         TariffReads tariffs,
         CancellationToken cancellationToken)
     {
-        var tenantId = TenantId(user);
+        var tenantId = CsmsTenantClaims.TenantId(user);
         var rows = await tariffs.ListAsync(tenantId, cancellationToken);
         return Results.Ok(rows.Select(ApiMappings.ToTariffResponse));
     }
@@ -121,7 +121,7 @@ internal static class DashboardEndpoints
         TariffEditing editing,
         CancellationToken cancellationToken)
     {
-        var tenantId = TenantId(user);
+        var tenantId = CsmsTenantClaims.TenantId(user);
         UpdateTariffOutcome outcome;
         try
         {
@@ -159,7 +159,7 @@ internal static class DashboardEndpoints
         OperatorCommands commands,
         CancellationToken cancellationToken)
     {
-        var tenantId = TenantId(user);
+        var tenantId = CsmsTenantClaims.TenantId(user);
         if (!await stations.ExistsForTenantAsync(id, tenantId, cancellationToken))
         {
             return Results.NotFound(new { message = $"No station '{id}'." });
@@ -176,7 +176,7 @@ internal static class DashboardEndpoints
         OperatorCommands commands,
         CancellationToken cancellationToken)
     {
-        var tenantId = TenantId(user);
+        var tenantId = CsmsTenantClaims.TenantId(user);
         if (!await sessions.ExistsForTenantAsync(id, tenantId, cancellationToken))
         {
             return Results.NotFound(new { message = $"No session '{id}'." });
@@ -203,8 +203,4 @@ internal static class DashboardEndpoints
             station,
             byStation.TryGetValue(station.Id, out var stationConnectors) ? stationConnectors : [])));
     }
-
-    private static string TenantId(ClaimsPrincipal user)
-        => user.FindFirstValue(UserClaimTypes.TenantId)
-           ?? throw new InvalidOperationException("The signed-in user carries no tenant claim.");
 }

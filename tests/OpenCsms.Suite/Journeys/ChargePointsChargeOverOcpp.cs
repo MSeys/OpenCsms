@@ -12,6 +12,7 @@ using OpenCsms.Suite.Support;
 using ProtoTest.AspNetCore;
 using ProtoTest.Core;
 using ProtoTest.Devices;
+using ProtoTest.Http;
 using ProtoTest.Json;
 using ProtoTest.Messaging;
 using ProtoTest.NUnit;
@@ -37,6 +38,7 @@ using CsmsApi = OpenCsms.Api.Program;
 /// </summary>
 [Application(CsmsTargets.Api)]
 [CsmsOperator]
+[Auth<CsmsMachineKeyAuthenticator>]
 [RequiresDevice<AcCharger>]
 public sealed class ChargePointsChargeOverOcpp
 {

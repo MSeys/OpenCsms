@@ -3,15 +3,18 @@ namespace OpenCsms.Suite.Api;
 using System.Net;
 using OpenCsms.Suite.Support;
 using ProtoTest.Core;
+using ProtoTest.Http;
 using ProtoTest.NUnit;
 using ProtoTest.Rest;
 
 /// <summary>
 /// The synchronous REST contracts around a charging session: bad input is rejected before any billing
-/// happens. The connector test provisions its operator through <see cref="CsmsOperatorAttribute"/>;
-/// the unknown-session test touches no provisioned state, so it needs no REST writes of its own.
+/// happens. Both tests reach the machine surface, so both bring an operator's tenant credential:
+/// the connector test's station rule and the unknown-session test's 404 are answered for the
+/// credential's tenant.
 /// </summary>
 [Application(CsmsTargets.Api)]
+[Auth<CsmsMachineKeyAuthenticator>]
 public sealed class SessionContracts
 {
     [ProtoTest]
@@ -28,6 +31,7 @@ public sealed class SessionContracts
     }
 
     [ProtoTest]
+    [CsmsOperator]
     public async Task AnUnknownSessionHasNoInvoice()
     {
         using var response = await Proto.Context.Rest().GetAsync($"/api/sessions/{Guid.NewGuid()}/invoice");

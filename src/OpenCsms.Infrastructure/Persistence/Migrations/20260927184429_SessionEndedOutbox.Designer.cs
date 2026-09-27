@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using OpenCsms.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using OpenCsms.Infrastructure.Persistence;
 namespace OpenCsms.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(CsmsDbContext))]
-    partial class CsmsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260927184429_SessionEndedOutbox")]
+    partial class SessionEndedOutbox
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -232,33 +235,6 @@ namespace OpenCsms.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("Tariffs");
-                });
-
-            modelBuilder.Entity("OpenCsms.Domain.Tenant", b =>
-                {
-                    b.Property<string>("Id")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<string>("ApiKeyHash")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<DateTimeOffset>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(120)
-                        .HasColumnType("character varying(120)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ApiKeyHash")
-                        .IsUnique();
-
-                    b.ToTable("Tenants");
                 });
 
             modelBuilder.Entity("OpenCsms.Domain.User", b =>

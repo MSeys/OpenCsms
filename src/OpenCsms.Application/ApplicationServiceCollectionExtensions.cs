@@ -48,9 +48,11 @@ public static class ApplicationServiceCollectionExtensions
         services.AddScoped<InvoiceReads>();
         services.AddScoped<MonthlyInvoiceExport>();
 
-        // The accounts.
+        // The accounts and the tenants that hold machine credentials.
         services.AddScoped<UserRegistration>();
         services.AddScoped<UserAuthentication>();
+        services.AddScoped<TenantRegistration>();
+        services.AddScoped<TenantAuthentication>();
         return services;
     }
 }

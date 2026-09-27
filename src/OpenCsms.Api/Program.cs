@@ -75,8 +75,19 @@ public sealed class Program
 
         var api = app.MapGroup("/api").WithTags("Csms");
 
-        api.MapPost("/tariffs", async (
+        // The one anonymous management route: a tenant registers and receives its machine key once.
+        api.MapTenantEndpoints();
+
+        // The management surface. Every route requires a tenant's machine key, and the tenant the
+        // call acts on is the credential's, never the request's: a foreign row answers 404 exactly
+        // like an unknown one.
+        var machine = app.MapGroup("/api")
+            .WithTags("Csms")
+            .RequireAuthorization(CsmsPolicies.Machine);
+
+        machine.MapPost("/tariffs", async (
             RegisterTariffRequest request,
+            ClaimsPrincipal user,
             TariffRegistration registration,
             CancellationToken cancellationToken) =>
         {
@@ -84,7 +95,7 @@ public sealed class Program
             {
                 var tariff = await registration.RegisterAsync(
                     new RegisterTariffCommand(
-                        request.TenantId,
+                        CsmsTenantClaims.TenantId(user),
                         request.Name,
                         request.EnergyPricePerKwh,
                         request.StartFee,
@@ -100,11 +111,17 @@ public sealed class Program
             }
         });
 
-        api.MapGet("/tariffs", async (string? tenantId, TariffReads tariffs, CancellationToken cancellationToken) =>
-            Results.Ok((await tariffs.ListAsync(tenantId, cancellationToken)).Select(ApiMappings.ToTariffResponse)));
+        machine.MapGet("/tariffs", async (
+            ClaimsPrincipal user,
+            TariffReads tariffs,
+            CancellationToken cancellationToken) =>
+            Results.Ok((await tariffs.ListAsync(
+                CsmsTenantClaims.TenantId(user),
+                cancellationToken)).Select(ApiMappings.ToTariffResponse)));
 
-        api.MapPost("/stations", async (
+        machine.MapPost("/stations", async (
             RegisterStationRequest request,
+            ClaimsPrincipal user,
             StationRegistration registration,
             CancellationToken cancellationToken) =>
         {
@@ -113,7 +130,7 @@ public sealed class Program
             {
                 outcome = await registration.RegisterAsync(
                     new RegisterStationCommand(
-                        request.TenantId,
+                        CsmsTenantClaims.TenantId(user),
                         request.ChargePointId,
                         request.Name,
                         request.ConnectorCount,
@@ -142,18 +159,23 @@ public sealed class Program
             };
         });
 
-        api.MapGet("/stations/{id:guid}", async (Guid id, StationReads stations, CancellationToken cancellationToken) =>
-            await stations.FindAsync(id, cancellationToken) is { } station
+        machine.MapGet("/stations/{id:guid}", async (
+            Guid id,
+            ClaimsPrincipal user,
+            StationReads stations,
+            CancellationToken cancellationToken) =>
+            await stations.FindForTenantAsync(id, CsmsTenantClaims.TenantId(user), cancellationToken) is { } station
                 ? Results.Ok(ApiMappings.ToStationResponse(station))
                 : Results.NotFound(new { message = $"No station '{id}'." }));
 
-        api.MapGet("/stations/{id:guid}/connectors", async (
+        machine.MapGet("/stations/{id:guid}/connectors", async (
             Guid id,
+            ClaimsPrincipal user,
             StationReads stations,
             ConnectorReads connectors,
             CancellationToken cancellationToken) =>
         {
-            if (!await stations.ExistsAsync(id, cancellationToken))
+            if (!await stations.ExistsForTenantAsync(id, CsmsTenantClaims.TenantId(user), cancellationToken))
             {
                 return Results.NotFound(new { message = $"No station '{id}'." });
             }
@@ -162,13 +184,14 @@ public sealed class Program
             return Results.Ok(rows.Select(ApiMappings.ToConnectorResponse));
         });
 
-        api.MapGet("/stations/{id:guid}/sessions", async (
+        machine.MapGet("/stations/{id:guid}/sessions", async (
             Guid id,
+            ClaimsPrincipal user,
             StationReads stations,
             SessionReads sessions,
             CancellationToken cancellationToken) =>
         {
-            if (!await stations.ExistsAsync(id, cancellationToken))
+            if (!await stations.ExistsForTenantAsync(id, CsmsTenantClaims.TenantId(user), cancellationToken))
             {
                 return Results.NotFound(new { message = $"No station '{id}'." });
             }
@@ -177,11 +200,21 @@ public sealed class Program
             return Results.Ok(rows.Select(ApiMappings.ToSessionResponse));
         });
 
-        api.MapPost("/sessions", async (
+        machine.MapPost("/sessions", async (
             StartSessionRequest request,
+            ClaimsPrincipal user,
+            StationReads stations,
             SessionStart start,
             CancellationToken cancellationToken) =>
         {
+            if (!await stations.ExistsForTenantAsync(
+                    request.StationId,
+                    CsmsTenantClaims.TenantId(user),
+                    cancellationToken))
+            {
+                return Results.NotFound(new { message = $"No station '{request.StationId}'." });
+            }
+
             var outcome = await start.StartAsync(
                 new StartSessionCommand(request.StationId, request.ConnectorId),
                 cancellationToken);
@@ -200,17 +233,35 @@ public sealed class Program
             };
         });
 
-        api.MapGet("/sessions/{id:guid}", async (Guid id, SessionReads sessions, CancellationToken cancellationToken) =>
-            await sessions.FindAsync(id, cancellationToken) is { } session
-                ? Results.Ok(ApiMappings.ToSessionResponse(session))
-                : Results.NotFound(new { message = $"No session '{id}'." }));
+        machine.MapGet("/sessions/{id:guid}", async (
+            Guid id,
+            ClaimsPrincipal user,
+            SessionReads sessions,
+            CancellationToken cancellationToken) =>
+        {
+            if (!await sessions.ExistsForTenantAsync(id, CsmsTenantClaims.TenantId(user), cancellationToken))
+            {
+                return Results.NotFound(new { message = $"No session '{id}'." });
+            }
 
-        api.MapPost("/sessions/{id:guid}/meter-values", async (
+            return await sessions.FindAsync(id, cancellationToken) is { } session
+                ? Results.Ok(ApiMappings.ToSessionResponse(session))
+                : Results.NotFound(new { message = $"No session '{id}'." });
+        });
+
+        machine.MapPost("/sessions/{id:guid}/meter-values", async (
             Guid id,
             MeterValueRequest request,
+            ClaimsPrincipal user,
+            SessionReads sessions,
             SessionMeterValues meterValues,
             CancellationToken cancellationToken) =>
         {
+            if (!await sessions.ExistsForTenantAsync(id, CsmsTenantClaims.TenantId(user), cancellationToken))
+            {
+                return Results.NotFound(new { message = $"No session '{id}'." });
+            }
+
             try
             {
                 return await meterValues.RecordAsync(id, request.TotalKwh, cancellationToken) is { } session
@@ -227,13 +278,19 @@ public sealed class Program
             }
         });
 
-        api.MapPost("/sessions/{id:guid}/end", async (
+        machine.MapPost("/sessions/{id:guid}/end", async (
             Guid id,
+            ClaimsPrincipal user,
             SessionReads sessions,
             SessionEnding ending,
             TimeProvider clock,
             CancellationToken cancellationToken) =>
         {
+            if (!await sessions.ExistsForTenantAsync(id, CsmsTenantClaims.TenantId(user), cancellationToken))
+            {
+                return Results.NotFound(new { message = $"No session '{id}'." });
+            }
+
             var session = await sessions.FindAsync(id, cancellationToken);
             if (session is null)
             {
@@ -253,46 +310,79 @@ public sealed class Program
                 return Results.Conflict(new { message = exception.Message });
             }
 
-            await ending.PublishAsync(session, cancellationToken);
             return Results.Ok(ApiMappings.ToSessionResponse(session));
         });
 
-        api.MapPost("/stations/{id:guid}/remote-start", async (
+        machine.MapPost("/stations/{id:guid}/remote-start", async (
             Guid id,
             RemoteStartRequest request,
+            ClaimsPrincipal user,
+            StationReads stations,
             OperatorCommands commands,
             CancellationToken cancellationToken) =>
-            RemoteCommandResults.Map(await commands.RemoteStartAsync(id, request.IdTag, request.ConnectorId, cancellationToken)));
+        {
+            if (!await stations.ExistsForTenantAsync(id, CsmsTenantClaims.TenantId(user), cancellationToken))
+            {
+                return Results.NotFound(new { message = $"No station '{id}'." });
+            }
 
-        api.MapPost("/sessions/{id:guid}/remote-stop", async (
+            return RemoteCommandResults.Map(await commands.RemoteStartAsync(
+                id,
+                request.IdTag,
+                request.ConnectorId,
+                cancellationToken));
+        });
+
+        machine.MapPost("/sessions/{id:guid}/remote-stop", async (
             Guid id,
+            ClaimsPrincipal user,
+            SessionReads sessions,
             OperatorCommands commands,
             CancellationToken cancellationToken) =>
-            RemoteCommandResults.Map(await commands.RemoteStopAsync(id, cancellationToken)));
+        {
+            if (!await sessions.ExistsForTenantAsync(id, CsmsTenantClaims.TenantId(user), cancellationToken))
+            {
+                return Results.NotFound(new { message = $"No session '{id}'." });
+            }
 
-        api.MapGet("/sessions/{id:guid}/invoice", async (
+            return RemoteCommandResults.Map(await commands.RemoteStopAsync(id, cancellationToken));
+        });
+
+        machine.MapGet("/sessions/{id:guid}/invoice", async (
             Guid id,
+            ClaimsPrincipal user,
+            SessionReads sessions,
             InvoiceReads invoices,
             CancellationToken cancellationToken) =>
-            await invoices.FindBySessionAsync(id, cancellationToken) is { } invoice
-                ? Results.Ok(ApiMappings.ToInvoiceResponse(invoice))
-                : Results.NotFound(new { message = $"Session '{id}' has no invoice yet." }));
+        {
+            if (!await sessions.ExistsForTenantAsync(id, CsmsTenantClaims.TenantId(user), cancellationToken))
+            {
+                return Results.NotFound(new { message = $"Session '{id}' has no invoice yet." });
+            }
 
-        api.MapGet("/invoices/{id:guid}", async (Guid id, InvoiceReads invoices, CancellationToken cancellationToken) =>
-            await invoices.FindAsync(id, cancellationToken) is { } invoice
+            return await invoices.FindBySessionAsync(id, cancellationToken) is { } invoice
+                ? Results.Ok(ApiMappings.ToInvoiceResponse(invoice))
+                : Results.NotFound(new { message = $"Session '{id}' has no invoice yet." });
+        });
+
+        machine.MapGet("/invoices/{id:guid}", async (
+            Guid id,
+            ClaimsPrincipal user,
+            InvoiceReads invoices,
+            CancellationToken cancellationToken) =>
+            await invoices.FindForTenantAsync(id, CsmsTenantClaims.TenantId(user), cancellationToken) is { } invoice
                 ? Results.Ok(ApiMappings.ToInvoiceResponse(invoice))
                 : Results.NotFound(new { message = $"No invoice '{id}'." }));
 
+        // The only cookie-authenticated route on the machine surface: the file is tenant-scoped,
+        // so the tenant comes from the session claim, never from the request.
         api.MapGet("/invoices/export", async (
             string? month,
             ClaimsPrincipal user,
             MonthlyInvoiceExport export,
             CancellationToken cancellationToken) =>
         {
-            // The only cookie-authenticated route on the machine surface: the file is tenant-scoped,
-            // so the tenant comes from the session claim, never from the request.
-            var tenantId = user.FindFirstValue(UserClaimTypes.TenantId)
-                ?? throw new InvalidOperationException("The signed-in user carries no tenant claim.");
+            var tenantId = CsmsTenantClaims.TenantId(user);
             try
             {
                 var file = await export.ExportAsync(tenantId, month, cancellationToken);
@@ -307,7 +397,7 @@ public sealed class Program
             }
         }).RequireAuthorization(CsmsPolicies.TenantUser);
 
-        api.MapIdentityEndpoints();
+        api.MapIdentityEndpoints(machine);
         app.MapDashboardEndpoints();
 
         return app;

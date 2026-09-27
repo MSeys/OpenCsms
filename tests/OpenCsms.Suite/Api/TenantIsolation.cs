@@ -4,6 +4,7 @@ using System.Net;
 using OpenCsms.Contracts;
 using OpenCsms.Suite.Support;
 using ProtoTest.Core;
+using ProtoTest.Http;
 using ProtoTest.NUnit;
 using ProtoTest.Rest;
 
@@ -16,6 +17,7 @@ using ProtoTest.Rest;
 /// </summary>
 [Application(CsmsTargets.Api)]
 [CsmsOperator]
+[Auth<CsmsMachineKeyAuthenticator>]
 [RequiresSeededMonth]
 public sealed class TenantIsolation
 {
@@ -51,7 +53,7 @@ public sealed class TenantIsolation
         }
 
         // Signed in as the test's own operator, every foreign row is unknown.
-        await DashboardSession.SignInAsync(own.LoginEmail, own.LoginPassword);
+        await DashboardSession.SignInAsync(own.LoginEmail, own.Password);
         using (var station = await Proto.Context.Rest().GetAsync($"/api/dashboard/stations/{foreignStation}"))
         {
             station.Should.HaveHttpStatus(HttpStatusCode.NotFound);
@@ -97,7 +99,7 @@ public sealed class TenantIsolation
 
         // The mirror: the neighbor cannot reach the test's station either, including through the
         // operator command, which scopes to the tenant before it touches a charge point.
-        await DashboardSession.SignInAsync(other.LoginEmail, other.LoginPassword);
+        await DashboardSession.SignInAsync(other.LoginEmail, other.Password);
         using (var station = await Proto.Context.Rest().GetAsync($"/api/dashboard/stations/{own.StationId}"))
         {
             station.Should.HaveHttpStatus(HttpStatusCode.NotFound);

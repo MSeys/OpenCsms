@@ -15,10 +15,31 @@ using ProtoTest.Core;
 public static class CsmsDatabase
 {
     /// <summary>Counts the invoice rows for a session; the store allows exactly zero or one.</summary>
-    public static async Task<int> CountInvoicesAsync(
+    public static Task<int> CountInvoicesAsync(
         ProtoExecutionContext context,
         Guid sessionId,
         CancellationToken cancellationToken = default)
+        => QueryAsync(
+            context,
+            db => db.Invoices.CountAsync(invoice => invoice.SessionId == sessionId, cancellationToken));
+
+    /// <summary>
+    /// Counts the session's outbox rows that are still pending, so a test can watch the dispatcher
+    /// carry an event from stored to sent. The payload is the only place the session id appears.
+    /// </summary>
+    public static Task<int> CountPendingOutboxAsync(
+        ProtoExecutionContext context,
+        Guid sessionId,
+        CancellationToken cancellationToken = default)
+        => QueryAsync(
+            context,
+            db => db.OutboxMessages.CountAsync(
+                message => message.SentAtUtc == null && message.PayloadJson.Contains(sessionId.ToString()),
+                cancellationToken));
+
+    private static async Task<int> QueryAsync(
+        ProtoExecutionContext context,
+        Func<CsmsDbContext, Task<int>> query)
     {
         ArgumentNullException.ThrowIfNull(context);
         var configuration = new ConfigurationBuilder()
@@ -32,8 +53,7 @@ public static class CsmsDatabase
         services.AddCsmsInfrastructure();
         await using var provider = services.BuildServiceProvider();
         await using var scope = provider.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<CsmsDbContext>();
-        return await db.Invoices.CountAsync(invoice => invoice.SessionId == sessionId, cancellationToken);
+        return await query(scope.ServiceProvider.GetRequiredService<CsmsDbContext>());
     }
 
     private static string ResolveConnectionString(ProtoExecutionContext context)

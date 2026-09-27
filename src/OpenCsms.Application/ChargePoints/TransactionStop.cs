@@ -7,9 +7,9 @@ using OpenCsms.Domain;
 /// <summary>
 /// Ends the transaction a StopTransaction names: a stop reading above the session's last one is
 /// recorded first, the session ends through the same <see cref="SessionEnding"/> the REST endpoint
-/// uses, and <c>session.ended</c> is published once. A stop for a session that already ended is a
-/// no-op the caller answers without processing it twice - a charge point that lost the answer may
-/// resend it.
+/// uses, and <c>session.ended</c> is stored and handed to the outbox once. A stop for a session that
+/// already ended is a no-op the caller answers without processing it twice - a charge point that lost
+/// the answer may resend it.
 /// </summary>
 public sealed class TransactionStop(
     ISessionQueries sessionQueries,
@@ -64,7 +64,6 @@ public sealed class TransactionStop(
             return new StopOperationRejected(exception.Message);
         }
 
-        await ending.PublishAsync(session, cancellationToken);
         return new TransactionStopped(session);
     }
 }

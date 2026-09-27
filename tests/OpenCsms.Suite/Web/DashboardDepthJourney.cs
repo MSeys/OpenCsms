@@ -4,6 +4,7 @@ using System.Net;
 using OpenCsms.Contracts;
 using OpenCsms.Suite.Support;
 using ProtoTest.Core;
+using ProtoTest.Http;
 using ProtoTest.Messaging;
 using ProtoTest.NUnit;
 using ProtoTest.Rest;
@@ -19,6 +20,7 @@ using BillingWorker = OpenCsms.Billing.Worker.Program;
 /// </summary>
 [Application(CsmsTargets.Api)]
 [CsmsOperator]
+[Auth<CsmsMachineKeyAuthenticator>]
 [WebSession("Default", Application = CsmsTargets.Dashboard, DiscoverRoutes = true)]
 [LoginAs<CsmsOperatorLogin>("operator")]
 [RequiresPlaywrightBrowser]

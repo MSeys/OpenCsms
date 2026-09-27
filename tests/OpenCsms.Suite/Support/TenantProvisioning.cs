@@ -21,7 +21,7 @@ public static class TenantProvisioning
         ArgumentNullException.ThrowIfNull(context);
         return CsmsProvisioning.ProvisionOperatorAsync(
             context,
-            context.UniqueName($"{prefix}-op"),
+            context.UniqueName($"{prefix}-tenant"),
             context.UniqueName($"{prefix}-cp"),
             context.UniqueName($"{prefix}-station"),
             context.UniqueName($"{prefix}-tariff"),

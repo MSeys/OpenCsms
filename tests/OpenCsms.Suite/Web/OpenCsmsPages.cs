@@ -284,7 +284,7 @@ public sealed class CsmsViewerLogin : IWebLoginStrategy
         await page.Page.Should.BeVisibleAsync(OpenCsmsDashboard.Wait, cancellationToken);
         await page.Flow("Sign in as the viewer")
             .Fill(signIn => signIn.Email, viewer.LoginEmail)
-            .Fill(signIn => signIn.Password, viewer.LoginPassword)
+            .Fill(signIn => signIn.Password, viewer.Password)
             .Click(signIn => signIn.Submit)
             .RunAsync(cancellationToken);
         await page.SessionUser.Should.BeVisibleAsync(OpenCsmsDashboard.Wait, cancellationToken);
@@ -306,7 +306,7 @@ public sealed class CsmsOperatorLogin : IWebLoginStrategy
         await page.Page.Should.BeVisibleAsync(OpenCsmsDashboard.Wait, cancellationToken);
         await page.Flow("Sign in as the operator")
             .Fill(signIn => signIn.Email, op.LoginEmail)
-            .Fill(signIn => signIn.Password, op.LoginPassword)
+            .Fill(signIn => signIn.Password, op.Password)
             .Click(signIn => signIn.Submit)
             .RunAsync(cancellationToken);
         await page.SessionUser.Should.BeVisibleAsync(OpenCsmsDashboard.Wait, cancellationToken);
