@@ -32,5 +32,6 @@ in-process.
 
 ## Framework docs
 
-The ProtoTest facts live in the ProtoTest checkout under `eng/facts/` (`architecture.md`,
-`recipes.md`, `gotchas.md`). Read the owning file before changing behavior.
+The ProtoTest facts live in the ProtoTest checkout's private records repository under
+`assets/internal/records/facts/` (`architecture.md`, `recipes.md`, `gotchas.md`). Read the owning
+file before changing behavior.

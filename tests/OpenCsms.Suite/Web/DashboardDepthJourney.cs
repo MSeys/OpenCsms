@@ -17,7 +17,7 @@ using BillingWorker = OpenCsms.Billing.Worker.Program;
 /// stored, the operator reprices the tariff through the dashboard form, and the remote start
 /// against the unconnected charge point answers its honest refusal on the screen.
 /// </summary>
-[Application(CsmsTargets.Dashboard)]
+[Application(CsmsTargets.Api)]
 [CsmsOperator]
 [WebSession("Default", Application = CsmsTargets.Dashboard, DiscoverRoutes = true)]
 [LoginAs<CsmsOperatorLogin>("operator")]

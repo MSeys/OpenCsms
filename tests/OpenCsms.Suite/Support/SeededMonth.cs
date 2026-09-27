@@ -34,6 +34,18 @@ public static class SeededMonth
     /// <summary>The seeded tariff's name: the idempotency marker a rerun looks for.</summary>
     public const string TariffName = "Seeded busy month";
 
+    /// <summary>
+    /// The product's switch: set to <c>off</c>, the run leaves the target's data alone - no migration
+    /// and no seeding - and the seeded journeys skip.
+    /// </summary>
+    public const string SeedSettingKey = "ProtoTest:Seed";
+
+    /// <summary>
+    /// Whether this run ensured the seeded month: the seed step sets it once the marker is present,
+    /// so the journeys that read the seeded rows gate on it instead of failing without the data.
+    /// </summary>
+    public static bool IsSeeded { get; private set; }
+
     public static readonly SeededTenant TenantA = new(
         "seeded-a",
         "Seeded Station A",
@@ -52,6 +64,13 @@ public static class SeededMonth
     public static async ValueTask SeedAsync(ProtoRunSetupContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
+        // An environment that owns its data sets ProtoTest:Seed=off: the step does neither the
+        // migration nor the seeding, and the journeys that read the seeded month stay skipped.
+        if (string.Equals(context.Configuration[SeedSettingKey], "off", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
         var connectionString = ResolveConnectionString(context);
         var clock = new SeedClock(new DateTimeOffset(2030, 5, 1, 8, 0, 0, TimeSpan.Zero));
 
@@ -81,11 +100,13 @@ public static class SeededMonth
         var existing = await tariffs.ListAsync(TenantA.TenantId, context.CancellationToken);
         if (existing.Any(tariff => string.Equals(tariff.Name, TariffName, StringComparison.Ordinal)))
         {
+            IsSeeded = true;
             return;
         }
 
         await SeedTenantAsync(scope.ServiceProvider, TenantA, clock, context.CancellationToken);
         await SeedTenantAsync(scope.ServiceProvider, TenantB, clock, context.CancellationToken);
+        IsSeeded = true;
     }
 
     private static async Task SeedTenantAsync(
@@ -217,3 +238,18 @@ public sealed record SeededTenant(
     string ChargePointId,
     string LoginEmail,
     string LoginPassword);
+
+/// <summary>
+/// Skips the journeys that read the seeded busy month when the run did not ensure it, so a staging
+/// run that leaves the target's data alone (<c>ProtoTest:Seed=off</c>) reports those journeys as
+/// skipped rather than failing on missing seed data.
+/// </summary>
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, Inherited = true)]
+public sealed class RequiresSeededMonthAttribute : ProtoAttribute, IProtoSkipCondition
+{
+    public string? GetSkipReason(ProtoHost host)
+        => SeededMonth.IsSeeded
+            ? null
+            : "The seeded busy month is absent: this run did not seed the target " +
+              $"('{SeededMonth.SeedSettingKey}' is off), so there are no seeded rows to read.";
+}

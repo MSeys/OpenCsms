@@ -14,15 +14,17 @@ The point is the *one suite, many environments* promise, without `if` statements
 
 | Mode | API | PostgreSQL & RabbitMQ | State |
 | --- | --- | --- | --- |
-| In-process + Testcontainers | hosted by the suite (`AddAspNetCoreServer`) | started by the suite (Testcontainers) | verified: 64/64 green, twice, fresh containers, seven Chromium journeys included (R3.4) |
-| Configured | hosted by the suite | an environment you provide through configuration; the suite's containers skip | verified twice, 64/64, one persistent database (R3.4) |
+| In-process + Testcontainers | hosted by the suite (`UseInProcess`) | started by the suite (Testcontainers) | verified: 64/64 green, 0 skipped, fresh containers, seven Chromium journeys included (`artifacts/gates/opencsms-container-20260927-195312.log`) |
+| Configured | hosted by the suite | an environment you provide through configuration; the suite's containers skip | verified: 64/64, 0 skipped, one persistent database (`artifacts/gates/opencsms-configured-20260927-195250.log`) |
+| Published, locally rehearsed | a real API process at `ProtoTest:Applications:Csms:BaseUrl`; the real `OpenCsms.Billing.Worker` process consumes | running `opencsms-postgres` / `opencsms-rabbitmq` containers addressed by the configured keys | verified: 64 total - 57 passed, 7 clock-dependent journeys skipped, the worker runs once (`artifacts/gates/opencsms-published-20260927-195118.log`); no staging target exists yet |
 | Container topology (planned) | a container | containers, `docker compose` / Aspire | M4 |
-| Published (planned) | a staging URL via `ProtoTest:Applications:Csms:BaseUrl` | the staging stack | M4 |
 
-The suite's `Setup` is the same code in both modes, and infrastructure that the environment
-already provides is not started. The product resolves its broker address on first publish and its
-database string when the context is first resolved, so settings that arrive after registration are
-seen; the framework gap that remains (the worker's `Program.Main`) is in the gap log below.
+The suite's `Setup` is the same code in every mode: each target - the store, the broker, the API
+with its billing worker, the dashboard application - declares its providers in order, and the first
+one the environment makes available serves it. Infrastructure the environment already provides is
+not started, and a worker follows its application: hosted with the in-process server, run by the
+environment otherwise. The product resolves its broker address on first publish and its database
+string when the context is first resolved, so settings that arrive after registration are seen.
 
 ## Status
 
@@ -42,14 +44,13 @@ refuses the call is `502`, no answer within the configured timeout is `504`, and
 authorization decision (for example `Blocked`) is the `200` body's status, not a failure. The
 gateway bills each session from the connector register it started at, so a second session on a
 connector invoices its own energy only (R2.3). The suite is green
-(`dotnet test tests/OpenCsms.Suite` → 57/57, domain 52/52): container mode verified twice with
-fresh Testcontainers including the five Chromium journeys
-(`artifacts/gates/opencsms-container-20260926-230024.log` and
-`artifacts/gates/opencsms-container-20260926-230055.log`), and configured mode verified twice
-against one persistent database (`artifacts/gates/opencsms-configured-20260926-230155.log` and
-`artifacts/gates/opencsms-configured-20260926-230216.log`; the second run reused the first run's
-seed, which is the seeder's idempotency proof) — the Setup is the same code either way. The milestones
-below are the ones in the
+(`dotnet test tests/OpenCsms.Suite` → 64/64, domain 52/52): the default mode with fresh
+Testcontainers and the seven Chromium journeys is recorded at
+`artifacts/gates/opencsms-container-20260927-195312.log`, the configured mode against one
+persistent database at `artifacts/gates/opencsms-configured-20260927-195250.log` (its seed was
+already in place, which is the seeder's idempotency proof), and the published rehearsal at
+`artifacts/gates/opencsms-published-20260927-195118.log` — the Setup is the same code in every
+mode. The milestones below are the ones in the
 [reference demo brief](https://github.com/MSeys/ProtoTest) — this README tracks them honestly.
 
 **Layering (R3.0).** The solution is concentric layers, and a project depends only inward:
@@ -116,8 +117,10 @@ The two remote endpoints answer a failed call honestly: a charge point that is n
 `502 Bad Gateway`, and one that takes the call but does not answer within `Ocpp:RemoteCallTimeoutSeconds`
 (ten seconds by default) is `504 Gateway Timeout`. A device's own authorization decision — for example
 `Blocked` — is not a failure: the operator reads it from the `200` body's `status`, exactly as the
-happy path reads `Accepted`. `ChargePointsChargeOverOcpp` pins all four branches, and the suite
-configures the timeout down to two seconds (`Setup`) so the journey that waits for a `504` stays fast.
+happy path reads `Accepted`. `ChargePointsChargeOverOcpp` pins all four branches; the journey that
+waits for a `504` reads the API's effective timeout — two seconds while the suite hosts the test
+server, the environment's own `Ocpp:RemoteCallTimeoutSeconds` against a running stack — instead of
+assuming either.
 
 ## Operator dashboard (R3.1)
 
@@ -193,28 +196,26 @@ nothing, so configured-mode reruns share one seed. Per-test prerequisites still 
 REST front door — the same routes, with the mechanics on `ProtoTest.Data` provisioners; the seed
 is volume only.
 
-**How the suite drives the browser.** The `Dashboard` application is the same API hosted on a
-loopback listener inside the test process (`AddLoopbackApplication` from `ProtoTest.AspNetCore`,
-the documented api-then-browser recipe: the suite passes the API's `Create` method and the run's
-collected configuration arrives as command-line arguments) and publishes the address it bound as
-its `BaseUrl`; the readiness probe waits on the real `/healthz`, and the browser session resolves
-that one address. The in-process `AddAspNetCoreServer` application named `Csms` stays the REST and
-OCPP server, so provisioning and the device journeys are untouched. The loopback's
-configuration arrives as arguments because a hand-built `WebApplication` has no initializer
-forwarding it. One browser journey needs more: the remote-stop click test drives a connected
-charge point through the dashboard's own remote command, and the loopback instance never sees the
-in-process journeys' connections, so a second device client hangs off `Dashboard` and reaches the
-loopback over a real socket - the in-process client stays the clock-true path the OCPP journeys
-assert against.
+**How the suite drives the browser.** The `Dashboard` application is the same API served by a
+loopback listener inside the test process when no environment address is configured
+(`UseConfigured().UseLoopback(CsmsApi.Create)` from `ProtoTest.AspNetCore`, the documented
+api-then-browser recipe: the suite passes the API's `Create` method and the run's collected
+configuration arrives as command-line arguments) and publishes the address it bound as its
+`BaseUrl`; the readiness probe waits on the real `/healthz`, and the browser session resolves
+that one address. The `Csms` application is the REST and OCPP server - the in-process test server
+in the default mode, the configured address otherwise - so provisioning and the device journeys
+follow the same chain. The loopback's configuration arrives as arguments because a hand-built
+`WebApplication` has no initializer forwarding it. One browser journey needs more: the remote-stop
+click test drives a connected charge point through the dashboard's own remote command, and the
+loopback instance never sees the in-process journeys' connections, so a second device client hangs
+off `Dashboard` and reaches it over a real socket - the in-process client stays the clock-true path
+the OCPP journeys assert against.
 
 ## Gap log
 
 This is the honest state: M1, M2 and M3's dashboard work are done, and the reference-suite
 audit's fixes (R1a) landed before new feature work.
 
-- The worker's `Program.Main` cannot see the run's configuration before `Build()` (ProtoTest.Hosting
-  P1-gap); the product reads its connection string inside the EF options factory. The fix is Phase 2
-  audit A3.
 - **Ending a session is at-most-once.** `/api/sessions/{id}/end` commits the ended session before it
   publishes `session.ended`; if the publish fails the client gets a 500 but the session stays ended and
   the event is never published, so a retry answers 409 and the invoice is lost. M1 accepts this for now;
@@ -231,9 +232,10 @@ audit's fixes (R1a) landed before new feature work.
 - **A browser download is named binary content.** `WebDownload` implements `IProtoBinaryContent`
   (fixed in the framework during M2), so the invoices screen's download journey opens the captured
   export in one line.
-- Published mode is planned (M4). The rest of OCPP beyond the named refusals, an operator
-  remote start racing a reconnect, and payments have no tests yet — [COVERAGE.md](COVERAGE.md)
-  lists the untested surface.
+- Container topology is planned (M4.5) and payments are not built. Published mode is rehearsed
+  locally (the mode table above) but has no staging target yet; the rest of OCPP beyond the named
+  refusals, and an operator remote start racing a reconnect, have no tests yet —
+  [COVERAGE.md](COVERAGE.md) lists the untested surface.
 - **The dashboard's views are done through R3.4.** The timeline, invoice lines, tariff repricing,
   the export with its Sheets assertions, the viewer journey and the multi-tenancy negative test
   are in; the invoices screen's download button is clicked in Chromium with the downloaded bytes
@@ -273,6 +275,17 @@ Each mode has a recorded run: `pwsh eng/run-suite.ps1 -Mode container` and
 the console and tee it to `artifacts/gates/opencsms-<mode>-<timestamp>.log`. Both modes build the
 dashboard first (`eng/build-dashboard.ps1`: `npm ci` + `npm run build`), so the browser journeys
 always test a fresh bundle; run it alone to build without running the suite.
+
+A published rehearsal points the same suite at a running stack: start the API and the Billing worker
+as real processes (`dotnet src/OpenCsms.Api/bin/Release/net8.0/OpenCsms.Api.dll --urls
+http://127.0.0.1:5080 --contentRoot src/OpenCsms.Api` and `dotnet
+src/OpenCsms.Billing.Worker/bin/Release/net8.0/OpenCsms.Billing.Worker.dll`), export the five keys —
+`ConnectionStrings__Csms`, `Messaging__RabbitMq__ConnectionString`,
+`ProtoTest__Messaging__RabbitMq__ConnectionString`, `ProtoTest__Applications__Csms__BaseUrl` and
+`ProtoTest__Applications__Dashboard__BaseUrl` — and run `dotnet test tests/OpenCsms.Suite -c Release`.
+The suite's provider chains step aside, the environment runs its own worker and clock, and the
+clock-dependent journeys skip; the recorded run is under
+`artifacts/gates/opencsms-published-<timestamp>.log`.
 
 `docker compose up` (M4) starts the whole topology for manual use.
 

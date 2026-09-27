@@ -19,7 +19,7 @@ using BillingWorker = OpenCsms.Billing.Worker.Program;
 /// covers. The download is captured with the framework's download support and registered as a test
 /// attachment, so the trace shows the file the browser saved.
 /// </summary>
-[Application(CsmsTargets.Dashboard)]
+[Application(CsmsTargets.Api)]
 [CsmsOperator]
 [WebSession("Default", Application = CsmsTargets.Dashboard, DiscoverRoutes = true)]
 [LoginAs<CsmsOperatorLogin>("operator")]
@@ -32,6 +32,7 @@ using BillingWorker = OpenCsms.Billing.Worker.Program;
 public sealed class InvoiceExportJourney
 {
     [ProtoTest]
+    [RequiresTestClock]
     public async Task TheOperatorDownloadsTheMonthlyExportFromTheInvoicesScreen()
     {
         var op = Proto.Context.Resolve<CsmsOperator>();

@@ -29,6 +29,7 @@ using BillingWorker = OpenCsms.Billing.Worker.Program;
 public sealed class OcppErrorPaths
 {
     [ProtoTest]
+    [RequiresTestClock]
     [CsmsOperator]
     [RequiresCapability(
         ProtoCapabilityKinds.Broker,

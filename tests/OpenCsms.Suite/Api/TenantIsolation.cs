@@ -16,6 +16,7 @@ using ProtoTest.Rest;
 /// </summary>
 [Application(CsmsTargets.Api)]
 [CsmsOperator]
+[RequiresSeededMonth]
 public sealed class TenantIsolation
 {
     [ProtoTest]

@@ -15,7 +15,7 @@ using ProtoTest.Web.Playwright;
 /// commands are not rendered for the role, and the API behind them already answers 403. The session
 /// declares <c>DiscoverRoutes</c> so the report's page inventory comes from the live Vue Router.
 /// </summary>
-[Application(CsmsTargets.Dashboard)]
+[Application(CsmsTargets.Api)]
 [CsmsOperator]
 [CsmsViewer]
 [WebSession("Default", Application = CsmsTargets.Dashboard, DiscoverRoutes = true)]

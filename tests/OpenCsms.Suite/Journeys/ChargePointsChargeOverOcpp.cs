@@ -1,10 +1,15 @@
 namespace OpenCsms.Suite.Journeys;
 
+using System.Globalization;
 using System.Net;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using OpenCsms.Application.Commands;
 using OpenCsms.Contracts;
 using OpenCsms.Protocol.Ocpp;
 using OpenCsms.Suite.Devices;
 using OpenCsms.Suite.Support;
+using ProtoTest.AspNetCore;
 using ProtoTest.Core;
 using ProtoTest.Devices;
 using ProtoTest.Json;
@@ -12,6 +17,7 @@ using ProtoTest.Messaging;
 using ProtoTest.NUnit;
 using ProtoTest.Rest;
 using BillingWorker = OpenCsms.Billing.Worker.Program;
+using CsmsApi = OpenCsms.Api.Program;
 
 /// <summary>
 /// The gateway journeys, through the framework's device stack: a charge point reaches the in-process
@@ -37,6 +43,7 @@ public sealed class ChargePointsChargeOverOcpp
     private static readonly TimeSpan InvoiceTimeout = TimeSpan.FromSeconds(30);
 
     [ProtoTest]
+    [RequiresTestClock]
     public async Task AChargePointBootsChargesAndStopsASession()
     {
         var op = Proto.Context.Resolve<CsmsOperator>();
@@ -271,9 +278,10 @@ public sealed class ChargePointsChargeOverOcpp
         var charger = Proto.Context.Devices(CsmsTargets.Chargers).For<AcCharger>(op.ChargePointId);
         await charger.BootAsync();
 
-        // Act: the device receives the remote start and does not answer it. The suite configures the
-        // product's remote timeout down to two seconds (Setup), so the 504 arrives quickly, and its
-        // body names that timeout - which fails if the request used the wrong value.
+        // Act: the device receives the remote start and does not answer it. The 504 arrives after the
+        // API's effective remote timeout - two seconds while the suite hosts the test server, the
+        // environment's own value against a running stack - and its body names that value, which
+        // fails if the request used another one.
         var startRequest = Proto.Context.Rest()
             .Body(new { idTag = "card-7", connectorId = 1 })
             .PostAsync($"/api/stations/{op.StationId}/remote-start");
@@ -283,11 +291,12 @@ public sealed class ChargePointsChargeOverOcpp
         using var start = await startRequest;
         var startDetail = start.ReadRequired<string>("detail");
         var afterStart = await GetSessionsAsync(op.StationId);
+        var timeout = RemoteCallTimeoutSeconds();
 
         using (Assert.EnterMultipleScope())
         {
             start.Should.HaveHttpStatus(HttpStatusCode.GatewayTimeout);
-            Assert.That(startDetail, Does.Contain("did not answer RemoteStartTransaction within 2s"));
+            Assert.That(startDetail, Does.Contain($"did not answer RemoteStartTransaction within {timeout}s"));
             Assert.That(
                 OcppJson.ReadPayload<RemoteStartTransactionRequest>(startCall.Payload).ConnectorId,
                 Is.EqualTo(1),
@@ -310,7 +319,7 @@ public sealed class ChargePointsChargeOverOcpp
         using (Assert.EnterMultipleScope())
         {
             stop.Should.HaveHttpStatus(HttpStatusCode.GatewayTimeout);
-            Assert.That(stopDetail, Does.Contain("did not answer RemoteStopTransaction within 2s"));
+            Assert.That(stopDetail, Does.Contain($"did not answer RemoteStopTransaction within {timeout}s"));
             Assert.That(
                 OcppJson.ReadPayload<RemoteStopTransactionRequest>(stopCall.Payload).TransactionId,
                 Is.EqualTo(plugged.TransactionId),
@@ -320,6 +329,7 @@ public sealed class ChargePointsChargeOverOcpp
     }
 
     [ProtoTest]
+    [RequiresTestClock]
     [RequiresCapability(
         ProtoCapabilityKinds.Broker,
         Reason = "The journey awaits invoice.issued on the broker; configure ProtoTest:Messaging:RabbitMq:ConnectionString.")]
@@ -362,6 +372,7 @@ public sealed class ChargePointsChargeOverOcpp
     }
 
     [ProtoTest]
+    [RequiresTestClock]
     [RequiresCapability(
         ProtoCapabilityKinds.Broker,
         Reason = "The journey awaits invoice.issued on the broker; configure ProtoTest:Messaging:RabbitMq:ConnectionString.")]
@@ -392,6 +403,7 @@ public sealed class ChargePointsChargeOverOcpp
     }
 
     [ProtoTest]
+    [RequiresTestClock]
     [RequiresCapability(
         ProtoCapabilityKinds.Broker,
         Reason = "The journey awaits invoice.issued on the broker; configure ProtoTest:Messaging:RabbitMq:ConnectionString.")]
@@ -438,6 +450,25 @@ public sealed class ChargePointsChargeOverOcpp
             Assert.That(billedSecond.EnergyKwh, Is.EqualTo(5m), "the second session bills 5 kWh, not the 27 kWh register");
             Assert.That(billedSecond.Total, Is.EqualTo(3.50m), "5 kWh at 0.40 plus the 1.50 start fee");
         }
+    }
+
+    /// <summary>
+    /// The API's effective remote-call timeout: while the suite hosts the application in-process,
+    /// the value bound by the test server; against a running environment, the product's own
+    /// <c>Ocpp:RemoteCallTimeoutSeconds</c> key (which the environment exports to both sides) with
+    /// the product's default when neither is set.
+    /// </summary>
+    private static int RemoteCallTimeoutSeconds()
+    {
+        if (Proto.Context.TryServerFactory<CsmsApi>() is { } server)
+        {
+            return server.Services.GetRequiredService<IOptions<RemoteCommandOptions>>().Value.RemoteCallTimeoutSeconds;
+        }
+
+        var configured = Proto.Context.Configuration["Ocpp:RemoteCallTimeoutSeconds"];
+        return int.TryParse(configured, NumberStyles.Integer, CultureInfo.InvariantCulture, out var seconds)
+            ? seconds
+            : new RemoteCommandOptions().RemoteCallTimeoutSeconds;
     }
 
     /// <summary>

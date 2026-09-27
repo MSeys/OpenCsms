@@ -12,7 +12,7 @@ using ProtoTest.Web.Playwright;
 /// station and its connector state on the public screen, with the shell offering sign-in instead of
 /// a session.
 /// </summary>
-[Application(CsmsTargets.Dashboard)]
+[Application(CsmsTargets.Api)]
 [CsmsOperator]
 [WebSession("Default", Application = CsmsTargets.Dashboard, DiscoverRoutes = true, Open = "/status")]
 [RequiresPlaywrightBrowser]

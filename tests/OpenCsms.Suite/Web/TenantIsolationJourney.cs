@@ -12,7 +12,7 @@ using ProtoTest.Web.Playwright;
 /// not-found panel instead of its rows. The API-level isolation lives in
 /// <see cref="Api.TenantIsolation"/>; this journey proves the dashboard is honest about the same rule.
 /// </summary>
-[Application(CsmsTargets.Dashboard)]
+[Application(CsmsTargets.Api)]
 [CsmsOperator]
 [WebSession("Default", Application = CsmsTargets.Dashboard, DiscoverRoutes = true)]
 [LoginAs<CsmsOperatorLogin>("operator")]

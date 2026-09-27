@@ -14,7 +14,7 @@ using ProtoTest.Web.Playwright;
 /// tenant owns, and its detail screen shows the empty session list. The session is declared with
 /// <c>DiscoverRoutes</c> so the report's page inventory comes from the live Vue Router.
 /// </summary>
-[Application(CsmsTargets.Dashboard)]
+[Application(CsmsTargets.Api)]
 [CsmsOperator]
 [WebSession("Default", Application = CsmsTargets.Dashboard, DiscoverRoutes = true)]
 [LoginAs<CsmsOperatorLogin>("operator")]

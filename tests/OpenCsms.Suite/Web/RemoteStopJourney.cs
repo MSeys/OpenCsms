@@ -21,7 +21,7 @@ using BillingWorker = OpenCsms.Billing.Worker.Program;
 /// application on purpose: the in-process journeys keep the test server with the test's clock, while
 /// this journey needs the instance the browser talks to, over a real socket.
 /// </summary>
-[Application(CsmsTargets.Dashboard)]
+[Application(CsmsTargets.Api)]
 [CsmsOperator]
 [RequiresDevice<AcCharger>]
 [WebSession("Default", Application = CsmsTargets.Dashboard, DiscoverRoutes = true)]

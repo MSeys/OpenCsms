@@ -27,6 +27,7 @@ public sealed class ChargingSessionsBecomeInvoices
     private static readonly TimeSpan InvoiceTimeout = TimeSpan.FromSeconds(30);
 
     [ProtoTest]
+    [RequiresTestClock]
     public async Task AChargingSessionBecomesAnInvoice()
     {
         // Arrange: the attribute registered the tenant, tariff and station this test bills against.

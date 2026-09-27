@@ -19,6 +19,7 @@ using ProtoTest.Sheets;
 public sealed class MonthlyInvoiceExport
 {
     [ProtoTest]
+    [RequiresSeededMonth]
     public async Task TheMonthlyExportMatchesTheStoredInvoiceRows()
     {
         await DashboardSession.SignInAsync(SeededMonth.TenantA.LoginEmail, SeededMonth.TenantA.LoginPassword);
@@ -90,6 +91,7 @@ public sealed class MonthlyInvoiceExport
     }
 
     [ProtoTest]
+    [RequiresSeededMonth]
     public async Task TheExportIsScopedToTheMonth()
     {
         await DashboardSession.SignInAsync(SeededMonth.TenantA.LoginEmail, SeededMonth.TenantA.LoginPassword);
@@ -106,6 +108,7 @@ public sealed class MonthlyInvoiceExport
     }
 
     [ProtoTest]
+    [RequiresSeededMonth]
     public async Task TheExportRefusesABadMonth()
     {
         await DashboardSession.SignInAsync(SeededMonth.TenantA.LoginEmail, SeededMonth.TenantA.LoginPassword);
@@ -129,6 +132,7 @@ public sealed class MonthlyInvoiceExport
     }
 
     [ProtoTest]
+    [RequiresSeededMonth]
     public async Task OneTenantCannotExportTheOthersMonth()
     {
         var ownIds = await ExportInvoiceIdsAsync(SeededMonth.TenantA);
