@@ -10,7 +10,9 @@ public interface IChargePointConnection
     /// <summary>
     /// Asks the charge point to start a transaction and returns its authorization decision. A device
     /// that refuses the call throws <see cref="ChargePointCallRefusedException"/>; a device that does
-    /// not answer within <paramref name="timeout"/> throws <see cref="TimeoutException"/>.
+    /// not answer within <paramref name="timeout"/> throws <see cref="TimeoutException"/>; a
+    /// connection that is lost while the call is in flight throws
+    /// <see cref="ChargePointConnectionLostException"/>.
     /// </summary>
     Task<AuthorizationStatus> RemoteStartAsync(
         string idTag,

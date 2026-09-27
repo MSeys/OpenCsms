@@ -22,8 +22,9 @@ using BillingWorker = OpenCsms.Billing.Worker.Program;
 /// station's connectors, are refused without touching the store; a second start on a charging
 /// connector is answered ConcurrentTx with the running transaction's number, opening nothing; and a
 /// charge point that drops and reconnects five times keeps its session on the registry's live
-/// connection, which a forwarded remote start proves. Each refusal pins the code the README
-/// documents.
+/// connection, which a forwarded remote start proves; and an operator remote start whose connection
+/// dies mid-call - a reconnect replacing it - is answered as the offline charge point it is, while
+/// the next call reaches the live connection. Each refusal pins the code the README documents.
 /// </summary>
 [Application(CsmsTargets.Api)]
 [Auth<CsmsMachineKeyAuthenticator>]
@@ -285,6 +286,55 @@ public sealed class OcppErrorPaths
             Assert.That(stored.EnergyKwh, Is.Zero);
             Assert.That(startPayload.ConnectorId, Is.EqualTo(2), "the live connection carried the gateway's call");
             Assert.That(startPayload.IdTag, Is.EqualTo("card-7"));
+        }
+    }
+
+    [ProtoTest]
+    [CsmsOperator]
+    public async Task ARemoteStartRacingAReconnectIsAnsweredHonestly()
+    {
+        var op = Proto.Context.Resolve<CsmsOperator>();
+        var charger = Proto.Context.Devices(CsmsTargets.Chargers).For<AcCharger>(op.ChargePointId);
+        await charger.BootAsync();
+
+        // Act: the operator's start is forwarded to the connected charge point, which drops the
+        // connection and reconnects before answering - the call's connection dies while the charge
+        // point comes back on a new one.
+        var startRequest = Proto.Context.Rest()
+            .Body(new { idTag = "card-7", connectorId = 1 })
+            .PostAsync($"/api/stations/{op.StationId}/remote-start");
+        await charger.ReceiveCallAsync(
+            OcppActions.RemoteStartTransaction,
+            "the CSMS starts a transaction remotely");
+        await charger.DropConnectionAsync();
+        var boot = await charger.BootAsync();
+        using (var response = await startRequest)
+        {
+            // The call can never be answered on the connection it travelled, so the operator is
+            // told the charge point is offline instead of a transport failure escaping.
+            response.Should.HaveHttpStatus(HttpStatusCode.Conflict);
+            Assert.That(response.ReadRequired<string>("message"), Does.Contain(op.ChargePointId));
+        }
+
+        // The registry is on the reconnected connection: the operator's next call is forwarded to
+        // it and the device's own answer is the 200 body.
+        var secondRequest = Proto.Context.Rest()
+            .Body(new { idTag = "card-7", connectorId = 1 })
+            .PostAsync($"/api/stations/{op.StationId}/remote-start");
+        var forwarded = await charger.AnswerRemoteStartAsync();
+        using (var response = await secondRequest)
+        {
+            response.Should.HaveHttpStatus(HttpStatusCode.OK).Should.MatchShape(new { status = "Accepted" });
+        }
+
+        // Assert: the race left no session behind and the live connection carried the next call.
+        var sessions = await GetSessionsAsync(op.StationId);
+        using (Assert.EnterMultipleScope())
+        {
+            Assert.That(boot.Status, Is.EqualTo(OcppRegistrationStatus.Accepted), "the reconnect was accepted");
+            Assert.That(forwarded.IdTag, Is.EqualTo("card-7"));
+            Assert.That(forwarded.ConnectorId, Is.EqualTo(1), "the live connection carried the call");
+            Assert.That(sessions, Is.Empty, "neither the lost call nor the live one opened a session");
         }
     }
 

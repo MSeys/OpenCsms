@@ -42,6 +42,13 @@ public sealed class OperatorCommands(
             var status = await connection.RemoteStartAsync(idTag, connectorId, Timeout, cancellationToken);
             return new RemoteCommandAccepted(status);
         }
+        catch (ChargePointConnectionLostException)
+        {
+            // The connection the call travelled died - typically a reconnect replacing it - so the
+            // charge point is unreachable for this call; the operator retries, which reaches the
+            // live connection.
+            return new RemoteCommandChargePointOffline(station.ChargePointId);
+        }
         catch (TimeoutException exception)
         {
             return new RemoteCommandTimedOut(exception.Message);
@@ -80,6 +87,12 @@ public sealed class OperatorCommands(
         {
             var status = await connection.RemoteStopAsync(session.TransactionId, Timeout, cancellationToken);
             return new RemoteCommandAccepted(status);
+        }
+        catch (ChargePointConnectionLostException)
+        {
+            // A lost connection leaves the session as it was; the operator retries against the live
+            // connection.
+            return new RemoteCommandChargePointOffline(station.ChargePointId);
         }
         catch (TimeoutException exception)
         {

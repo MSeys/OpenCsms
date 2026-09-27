@@ -41,8 +41,7 @@ public sealed class InvoiceNotificationsReachTheExternalTarget
     {
         var op = Proto.Context.Resolve<CsmsOperator>();
         var target = Proto.Context.WireMock(CsmsTargets.InvoiceReadyTarget);
-        target.Stub("POST", NotificationSettings.InvoiceReadyPath + "/*")
-            .RespondJson(HttpStatusCode.Accepted, new { status = "accepted" });
+        NotificationTargetStubs.Accept(target, NotificationSettings.InvoiceReadyPath);
 
         // Act: charge and end a session, exactly like a real customer would.
         var started = await StartSessionAsync(op.StationId, connectorId: 1);
@@ -82,8 +81,7 @@ public sealed class InvoiceNotificationsReachTheExternalTarget
     public async Task ABillingFailureReachesTheAlertingTarget()
     {
         var target = Proto.Context.WireMock(CsmsTargets.BillingFailureTarget);
-        target.Stub("POST", NotificationSettings.BillingFailurePath + "/*")
-            .RespondJson(HttpStatusCode.Accepted, new { status = "accepted" });
+        NotificationTargetStubs.Accept(target, NotificationSettings.BillingFailurePath);
 
         // Arrange: a session.ended naming a session the store does not know - the API can only
         // publish for sessions it knows, so the test publishes the poison on the product's exchange

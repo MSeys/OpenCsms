@@ -37,9 +37,22 @@ public static class CsmsDatabase
                 message => message.SentAtUtc == null && message.PayloadJson.Contains(sessionId.ToString()),
                 cancellationToken));
 
-    private static async Task<int> QueryAsync(
+    /// <summary>Reads the session's outbox row as the store wrote it: failed attempts and the send stamp.</summary>
+    public static Task<OutboxRowState> ReadOutboxAsync(
         ProtoExecutionContext context,
-        Func<CsmsDbContext, Task<int>> query)
+        Guid sessionId,
+        CancellationToken cancellationToken = default)
+        => QueryAsync(
+            context,
+            db => db.OutboxMessages
+                .AsNoTracking()
+                .Where(message => message.PayloadJson.Contains(sessionId.ToString()))
+                .Select(message => new OutboxRowState(message.Attempts, message.SentAtUtc))
+                .SingleAsync(cancellationToken));
+
+    private static async Task<T> QueryAsync<T>(
+        ProtoExecutionContext context,
+        Func<CsmsDbContext, Task<T>> query)
     {
         ArgumentNullException.ThrowIfNull(context);
         var configuration = new ConfigurationBuilder()
@@ -75,3 +88,6 @@ public static class CsmsDatabase
             "(a started PostgreSQL container does this).");
     }
 }
+
+/// <summary>One outbox row's own record, as the store keeps it for diagnosis.</summary>
+public sealed record OutboxRowState(int Attempts, DateTimeOffset? SentAtUtc);

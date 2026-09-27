@@ -64,7 +64,9 @@ public sealed class ChargePointConnection(string chargePointId, WebSocket socket
 
     /// <summary>
     /// Sends a server-initiated call and waits for the charge point's result. A call error and a shape
-    /// that cannot be read both throw, so the operator sees the device's own answer.
+    /// that cannot be read both throw, so the operator sees the device's own answer; a connection
+    /// disposed under the wait throws <see cref="ChargePointConnectionLostException"/> instead of a
+    /// bare cancellation.
     /// </summary>
     private async Task<T> CallAsync<T>(string action, object payload, TimeSpan timeout, CancellationToken cancellationToken)
     {
@@ -87,6 +89,12 @@ public sealed class ChargePointConnection(string chargePointId, WebSocket socket
                 throw new TimeoutException(
                     $"The charge point '{ChargePointId}' did not answer {action} within {timeout.TotalSeconds:0.#}s.",
                     exception);
+            }
+            catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                // Disposing the connection cancels every pending call; the socket went away - a
+                // reconnect replaced this connection, or it closed - so no answer can arrive on it.
+                throw new ChargePointConnectionLostException(ChargePointId, exception);
             }
 
             return answer switch
@@ -241,10 +249,19 @@ public sealed class ChargePointConnection(string chargePointId, WebSocket socket
         {
             if (socket.State != WebSocketState.Open)
             {
-                throw new InvalidOperationException($"The charge point '{ChargePointId}' is not connected.");
+                throw new ChargePointConnectionLostException(ChargePointId);
             }
 
-            await socket.SendAsync(Encoding.UTF8.GetBytes(text), WebSocketMessageType.Text, endOfMessage: true, cancellationToken);
+            try
+            {
+                await socket.SendAsync(Encoding.UTF8.GetBytes(text), WebSocketMessageType.Text, endOfMessage: true, cancellationToken);
+            }
+            catch (Exception exception) when (exception is WebSocketException or ObjectDisposedException or InvalidOperationException)
+            {
+                // The peer is gone or the socket was disposed under the send; the frame did not
+                // travel a live connection.
+                throw new ChargePointConnectionLostException(ChargePointId, exception);
+            }
         }
         finally
         {

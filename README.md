@@ -15,7 +15,7 @@ The point is the *one suite, many environments* promise, without `if` statements
 
 | Mode | API | PostgreSQL & RabbitMQ | State |
 | --- | --- | --- | --- |
-| In-process + Testcontainers | hosted by the suite (`UseInProcess`) | started by the suite (Testcontainers) | verified: 69/69 green, 0 skipped, fresh containers, seven Chromium journeys included (`artifacts/gates/opencsms-container-20260927-222508.log`) |
+| In-process + Testcontainers | hosted by the suite (`UseInProcess`) | started by the suite (Testcontainers) | verified: 73/73 green, 0 skipped, fresh containers, seven Chromium journeys included (`artifacts/gates/opencsms-container-20260927-230357.log`) |
 | Configured | hosted by the suite | an environment you provide through configuration; the suite's containers skip | verified: 64/64, 0 skipped, one persistent database (`artifacts/gates/opencsms-configured-20260927-195250.log`); measured before the outbox and machine-credential stages |
 | Published, locally rehearsed | a real API process at `ProtoTest:Applications:Csms:BaseUrl`; the real `OpenCsms.Billing.Worker` process consumes | running `opencsms-postgres` / `opencsms-rabbitmq` containers addressed by the configured keys | verified: 64 total - 57 passed, 7 clock-dependent journeys skipped, the worker runs once (`artifacts/gates/opencsms-published-20260927-195118.log`), measured before the outbox and machine-credential stages (in-process-gated); no staging target exists yet |
 | Container topology (planned) | a container | containers, `docker compose` / Aspire | M4 |
@@ -40,16 +40,18 @@ including the idle-fee journeys that advance the injected test clock instead of 
 error paths — a duplicate StopTransaction, malformed MeterValues, an unknown charge point,
 out-of-subset actions and out-of-range connectors — are pinned with the OCPP error each one answers
 with (R2.3). The remote
-endpoints' failure branches are pinned too (R2.4): an offline charge point is `409`, a device that
+endpoints' failure branches are pinned too (R2.4/M4.4): an offline charge point — or one whose
+connection is lost while the call is in flight, a reconnect replacing it — is `409`, a device that
 refuses the call is `502`, no answer within the configured timeout is `504`, and a device's own
 authorization decision (for example `Blocked`) is the `200` body's status, not a failure. The
 gateway bills each session from the connector register it started at, so a second session on a
 connector invoices its own energy only (R2.3). The notification worker closes the product's last
 component: an issued invoice and a billing failure each reach their configured external HTTP target
-through the fakes the suite hosts. The suite is green
-(`dotnet test tests/OpenCsms.Suite` → 69/69, domain 52/52): the default mode with fresh
+through the fakes the suite hosts, and a target that stays down is retried and dead-lettered rather
+than dropped. The suite is green
+(`dotnet test tests/OpenCsms.Suite` → 73/73, domain 52/52): the default mode with fresh
 Testcontainers and the seven Chromium journeys is recorded at
-`artifacts/gates/opencsms-container-20260927-222508.log`, the configured mode against one
+`artifacts/gates/opencsms-container-20260927-230357.log`, the configured mode against one
 persistent database at `artifacts/gates/opencsms-configured-20260927-195250.log` (its seed was
 already in place, which is the seeder's idempotency proof), and the published rehearsal at
 `artifacts/gates/opencsms-published-20260927-195118.log` — the Setup is the same code in every
@@ -115,12 +117,15 @@ charge point is `AcCharger`, built on `ProtoTest.Devices.WebSocket`: the same re
 in-process gateway through its `TestServer` and a real endpoint over a socket, with no mode
 conditionals.
 
-The two remote endpoints answer a failed call honestly: a charge point that is not connected is
+The two remote endpoints answer a failed call honestly: a charge point that is not connected — or
+whose connection is lost while the call is in flight, for example a reconnect replacing it — is
 `409 Conflict` (both endpoints), a device that refuses the call with an OCPP call error is
 `502 Bad Gateway`, and one that takes the call but does not answer within `Ocpp:RemoteCallTimeoutSeconds`
 (ten seconds by default) is `504 Gateway Timeout`. A device's own authorization decision — for example
 `Blocked` — is not a failure: the operator reads it from the `200` body's `status`, exactly as the
-happy path reads `Accepted`. `ChargePointsChargeOverOcpp` pins all four branches; the journey that
+happy path reads `Accepted`. `ChargePointsChargeOverOcpp` pins the four branches, and `OcppErrorPaths`
+pins the reconnect race: the call whose connection dies is refused `409`, and the operator's next
+call is answered by the reconnected charge point through the live connection. The journey that
 waits for a `504` reads the API's effective timeout — two seconds while the suite hosts the test
 server, the environment's own `Ocpp:RemoteCallTimeoutSeconds` against a running stack — instead of
 assuming either.
@@ -239,8 +244,13 @@ reserved at setup, because the worker reads its addresses once when its host sta
 its invoice or session in the request path and reads that request — and its logged body — out of the
 shared log. `InvoiceNotificationsReachTheExternalTarget` proves an issued invoice reaches the
 invoice-ready fake with the invoice's data, and that a session the billing worker gives up on reaches
-the failure fake with the recorded reason. PSP-down fault injection, retry exhaustion and the
-dead-letter assertions land with M4.4.
+the failure fake with the recorded reason. `NotificationTargetOutagesAreDeadLettered` pins the
+target-down path: the fake answers `503` for one entity's notifications, the consumer spends its
+in-process retries and the delivery lands on that notification's dead-letter queue
+(`notifications.invoice-issued.dlq` or `notifications.billing-failed.dlq`) with the entity's ids and
+the completed-retry count, while the invoice stays stored exactly once. A target-down rejection is
+keyed to the notification's own session, so it runs beside the accepting journeys on the shared
+fakes.
 
 ## Gap log
 
@@ -251,7 +261,8 @@ audit's fixes (R1a) landed before new feature work.
   session and its `session.ended` event in one transaction; the immediate publish attempt may fail
   without losing the invoice - the dispatcher retries the stored row with a bounded backoff until the
   broker accepts it, and the worker's idempotency keeps exactly one invoice per session. The
-  publish-failure path is pinned by `OutboxTests`.
+  publish-failure paths are pinned by `OutboxTests`: one failed attempt, and a two-failure outage the
+  store's bounded backoff rides out, both still billing exactly once.
 - **Every test connects to the broker at setup.** The run-wide `Tap(CsmsEvents.Exchange)` pre-bind
   makes the suite's tap prepare its destination during test setup, including the REST-only contract
   tests, so a run without a broker fails setup there rather than skipping; the broker capability is
@@ -267,10 +278,9 @@ audit's fixes (R1a) landed before new feature work.
 - Container topology is planned (M4.5) and payments are not built: the notification worker pushes
   invoice-ready and billing-failure notifications to configurable HTTP targets (the suite's WireMock
   fakes), but there is no real PSP payment flow, and a target that stays down is dead-lettered rather
-  than replayed — M4.4 pins that fault path. Published mode is rehearsed
+  than replayed (`NotificationTargetOutagesAreDeadLettered` pins it). Published mode is rehearsed
   locally (the mode table above) but has no staging target yet; the rest of OCPP beyond the named
-  refusals, and an operator remote start racing a reconnect, have no tests yet —
-  [COVERAGE.md](COVERAGE.md) lists the untested surface.
+  refusals has no tests yet — [COVERAGE.md](COVERAGE.md) lists the untested surface.
 - **The dashboard's views are done through R3.4.** The timeline, invoice lines, tariff repricing,
   the export with its Sheets assertions, the viewer journey and the multi-tenancy negative test
   are in; the invoices screen's download button is clicked in Chromium with the downloaded bytes
