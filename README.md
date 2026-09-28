@@ -15,10 +15,10 @@ The point is the *one suite, many environments* promise, without `if` statements
 
 | Mode | API | PostgreSQL & RabbitMQ | State |
 | --- | --- | --- | --- |
-| In-process + Testcontainers | hosted by the suite (`UseInProcess`) | started by the suite (Testcontainers) | verified: 74/74 green, 0 skipped, fresh containers, seven Chromium journeys included (`artifacts/gates/opencsms-container-20260928-091846.log`) |
-| Configured | hosted by the suite | an environment you provide through configuration; the suite's containers skip | verified: 64/64, 0 skipped, one persistent database (`artifacts/gates/opencsms-configured-20260927-195250.log`); measured before the outbox and machine-credential stages |
-| Published, locally rehearsed (`-Mode published`) | a real API process at `ProtoTest:Applications:Csms:BaseUrl`; the real `OpenCsms.Billing.Worker` consumes and the real `OpenCsms.Notification.Worker` idles without targets | running `opencsms-postgres` / `opencsms-rabbitmq` containers addressed by the configured keys | verified: 74 total - 61 passed, 13 clock- and in-process-gated journeys skipped, each worker process runs once (`artifacts/gates/opencsms-published-20260928-085449.log`); no staging target exists yet |
-| Container topology (`-Mode topology`) | the AppHost's API project resource at its published address (it also serves the dashboard) | the AppHost's PostgreSQL and RabbitMQ containers | verified: 74 total - 61 passed, 13 clock/in-process journeys skipped (`artifacts/gates/opencsms-topology-20260928-092028.log`) |
+| In-process + Testcontainers | hosted by the suite (`UseInProcess`) | started by the suite (Testcontainers) | verified: 75/75 green, 0 skipped, fresh containers, seven Chromium journeys and the showpiece journey included (`artifacts/gates/opencsms-container-20260928-160535.log`) |
+| Configured | hosted by the suite | an environment you provide through configuration; the suite's containers skip | verified: 75/75, 0 skipped, one persistent database that held earlier runs' sessions, migrated and backfilled (`artifacts/gates/opencsms-configured-20260928-160616.log`) |
+| Published, locally rehearsed (`-Mode published`) | a real API process at `ProtoTest:Applications:Csms:BaseUrl`; the real `OpenCsms.Billing.Worker` consumes and the real `OpenCsms.Notification.Worker` idles without targets | running `opencsms-postgres` / `opencsms-rabbitmq` containers addressed by the configured keys | verified: 74 total - 61 passed, 13 clock- and in-process-gated journeys skipped, each worker process runs once (`artifacts/gates/opencsms-published-20260928-085449.log`, recorded before the tariff fix, when the showpiece journey was outside the gate); no staging target exists yet |
+| Container topology (`-Mode topology`) | the AppHost's API project resource at its published address (it also serves the dashboard) | the AppHost's PostgreSQL and RabbitMQ containers | verified: 74 total - 61 passed, 13 clock/in-process journeys skipped (`artifacts/gates/opencsms-topology-20260928-092028.log`, recorded before the tariff fix, when the showpiece journey was outside the gate) |
 
 The suite's `Setup` is the same code in every mode: each target - the store, the broker, the API
 with its billing worker, the dashboard application - declares its providers in order, and the first
@@ -62,15 +62,16 @@ connector invoices its own energy only (R2.3). The notification worker closes th
 component: an issued invoice and a billing failure each reach their configured external HTTP target
 through the fakes the suite hosts, and a target that stays down is retried and dead-lettered rather
 than dropped. The suite is green
-(`dotnet test tests/OpenCsms.Suite` → 74/74, domain 52/52): the default mode with fresh
-Testcontainers and the seven Chromium journeys is recorded at
-`artifacts/gates/opencsms-container-20260928-091846.log`, the configured mode against one
-persistent database at `artifacts/gates/opencsms-configured-20260927-195250.log` (its seed was
-already in place, which is the seeder's idempotency proof), the published rehearsal at
-`artifacts/gates/opencsms-published-20260928-085449.log` (61 passed, the same 13 gated journeys
-skipped, both worker processes run once), and the AppHost topology at
-`artifacts/gates/opencsms-topology-20260928-092028.log` (61 passed, the 13 clock- and in-process-
-gated journeys skipped) — the Setup is the same code in every
+(`dotnet test tests/OpenCsms.Suite` → 75/75, domain 56/56): the default mode with fresh
+Testcontainers, the seven Chromium journeys and the showpiece journey is recorded at
+`artifacts/gates/opencsms-container-20260928-160535.log`, the configured mode against the
+persistent database at `artifacts/gates/opencsms-configured-20260928-160616.log` (75/75; its seed
+was already in place, which is the seeder's idempotency proof, and the tariff-snapshot migration
+backfilled the sessions stored before it), the published rehearsal at
+`artifacts/gates/opencsms-published-20260928-085449.log` and the AppHost topology at
+`artifacts/gates/opencsms-topology-20260928-092028.log` (both recorded before the tariff fix, when
+the showpiece journey was outside the gate: 61 passed, the 13 clock- and in-process-gated journeys
+skipped, both worker processes run once in the rehearsal) — the Setup is the same code in every
 mode. The milestones below are the ones in the
 [reference demo brief](https://github.com/MSeys/ProtoTest) — this README tracks them honestly.
 
@@ -103,7 +104,7 @@ untested.
 - [x] M1 — CSMS API + PostgreSQL + billing worker + REST suite + one journey
 - [x] M2 — OCPP gateway + charge-point simulator + idle-fee journey
 - [x] M3 — dashboard + monthly export + browser journeys (R3.0a–d: layering; R3.1: shell, roles and browser wiring; R3.2: view depth, tariff repricing, the `.xlsx` export with Sheets assertions, the seeded month, the viewer and multi-tenancy journeys)
-- [ ] M4 — container topology + deployed mode + fault injection + nightly CI
+- [x] M4 - container topology + deployed mode + fault injection + nightly CI
 
 ## OCPP 1.6J subset
 
@@ -269,6 +270,46 @@ the completed-retry count, while the invoice stays stored exactly once. A target
 keyed to the notification's own session, so it runs beside the accepting journeys on the shared
 fakes.
 
+## Benchmarks and the trace showpiece (M7)
+
+The benchmark harness (`tests/OpenCsms.Benchmarks`) runs the product's own API and billing worker and
+measures ProtoTest's per-test cost against the same API behind a raw `WebApplicationFactory`, with
+PostgreSQL and RabbitMQ from the environment. Rerun it with:
+
+```bash
+pwsh eng/run-benchmark.ps1
+```
+
+It writes `artifacts/benchmarks/<timestamp>/results.json` and `results.md`. The recorded run
+(2026-09-28, Windows 11 / X64 / 16 cores / 31 GiB, .NET 8.0.31, 1,000 iterations and 1,000 seeded
+journeys) measured:
+
+| Comparison | ProtoTest | Raw WebApplicationFactory | Where ProtoTest loses |
+| --- | ---: | ---: | --- |
+| One `GET /healthz` through a full test cycle, tracing on | 43.5 ms median | 5.0 ms median | ~8.7x per test |
+| The same test, tracing off | 46.7 ms median | 5.0 ms median | ~9.3x per test |
+| Suite startup through the first completed request | 178.7 ms | 78.1 ms | ~2.3x |
+
+Tracing itself is not the cost: with it off the same test measured about the same (46.7 ms vs.
+43.5 ms, within run variation). Most of the per-test difference is the suite's own broker taps, which
+prepare and release inside every test (the run's phase profile measures about 30 of 36 ms there);
+ProtoTest's lifecycle and context wrapper is a few milliseconds. The raw baseline builds one factory
+and a client per test, so it pays for the client and the request, and it never opens a broker
+consumer. The raw baseline is the honest floor: an integration test that wants a fresh host per test
+pays more than either number. The 1,000-journey run took 96.1 s (87.7 ms median per journey,
+p95 140.8 ms) and left a 41.2 MB trace; the same run at 100 journeys left 4.1 MB, so the trace grows
+linearly with the test count, about 41 KB per journey.
+
+The showpiece is a real regression that has been fixed: `IdleFeeAfterTariffChange` starts a session,
+advances the test clock five hours, reprices the tariff to drop the idle fee while the session is
+open, and then ends it. Billing used to read the tariff when the worker processed `session.ended`,
+so the stored invoice billed 13.60 where the session's own tariff promised 20.30; the failing trace
+recorded before the fix is kept at `artifacts/showpiece/opencsms.prototrace` as the historical
+evidence. The session
+now copies the tariff's terms when it starts, so the repricing never reaches it: the journey asserts
+20.30 and runs in the container gate. `pwsh eng/run-showpiece.ps1` reruns it alone and writes the
+fresh trace to `artifacts/showpiece/opencsms-rerun.prototrace`, leaving the historical one untouched.
+
 ## Gap log
 
 This is the honest state: M1, M2 and M3's dashboard work are done, and the reference-suite
@@ -302,7 +343,8 @@ audit's fixes (R1a) landed before new feature work.
   (it starts only while selected), which runs the API project (serving the dashboard too), the
   billing worker and the notification worker as real processes beside fresh PostgreSQL and RabbitMQ
   containers: 74 total - 61 passed, 13 clock- and in-process-gated journeys skipped
-  (`artifacts/gates/opencsms-topology-20260928-092028.log`). The AppHost's notification worker is
+  (`artifacts/gates/opencsms-topology-20260928-092028.log`, recorded before the tariff fix, when
+  the showpiece journey was outside the gate). The AppHost's notification worker is
   wired to the product's own target keys, which the suite leaves unset there, so it idles with the
   product's log line; the notification journeys themselves assert the injected run clock and an
   in-process application, which real processes do not have, so they stay skipped rather than being

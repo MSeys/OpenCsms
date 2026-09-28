@@ -5,9 +5,14 @@ using OpenCsms.Domain;
 
 /// <summary>
 /// Starts a session on a station connector: the station must exist, the connector must be one of its
-/// own, and the session opens at the clock's instant. The store port persists it.
+/// own, and the session opens at the clock's instant under the tariff's terms. The store port
+/// persists it.
 /// </summary>
-public sealed class SessionStart(IStationQueries stations, ISessionCommands sessions, TimeProvider clock)
+public sealed class SessionStart(
+    IStationQueries stations,
+    ITariffQueries tariffs,
+    ISessionCommands sessions,
+    TimeProvider clock)
 {
     public async Task<StartSessionOutcome> StartAsync(
         StartSessionCommand command,
@@ -25,7 +30,9 @@ public sealed class SessionStart(IStationQueries stations, ISessionCommands sess
             return new SessionConnectorOutsideStation(station, command.ConnectorId);
         }
 
-        var session = ChargingSession.Start(station.TenantId, station.Id, command.ConnectorId, clock.GetUtcNow());
+        var tariff = await tariffs.FindAsync(station.TariffId, cancellationToken)
+            ?? throw new InvalidOperationException($"Station '{station.Id}' names tariff '{station.TariffId}', which is not in the store.");
+        var session = ChargingSession.Start(station.TenantId, station.Id, command.ConnectorId, clock.GetUtcNow(), tariff);
         await sessions.AddAsync(session, cancellationToken);
         return new SessionStarted(session);
     }

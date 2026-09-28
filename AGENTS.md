@@ -21,6 +21,12 @@ references in source comments — write the reason the code is what it is instea
   the evidence log to `artifacts/gates/opencsms-container-<timestamp>.log`.
 - `dotnet test tests/OpenCsms.Domain.Tests -c Release` covers the domain rules; the integration suite
   is `tests/OpenCsms.Suite`.
+- `eng/run-benchmark.ps1` runs the published benchmark (overhead, startup and 1,000 seeded journeys)
+  against the persistent `opencsms-postgres`/`opencsms-rabbitmq` containers and writes
+  `artifacts/benchmarks/<timestamp>/results.json` and `results.md`.
+- `eng/run-showpiece.ps1` runs the showpiece journey alone and copies its fresh trace to
+  `artifacts/showpiece/opencsms-rerun.prototrace`; the historical failing trace from before the
+  tariff fix stays at `artifacts/showpiece/opencsms.prototrace`.
 
 ## Provisioning in tests
 

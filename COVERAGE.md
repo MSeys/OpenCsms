@@ -16,6 +16,7 @@ the same commit as the behavior it describes.
 | `tests/OpenCsms.Suite/Api/SessionContracts.cs` | Synchronous REST contracts: a connector outside the station answers 400; an unknown session has no invoice (404). No worker or broker needed. |
 | `tests/OpenCsms.Suite/Api/DashboardContracts.cs` | The dashboard's API contracts (R3.1, R3.2): anonymous reads of `/api/dashboard/stations` answer 401 while `/api/status/stations` answers 200 without an account; a signed-in operator reads their own station and its empty session list; a viewer reads the same list (200) but `/api/dashboard/stations/{id}/remote-start` answers 403 before anything reaches a charge point; the operator's own call reaches the product path and answers 409 because the provisioned charge point is not connected. The cookie is what carries the role; the suite signs in through the product's own endpoint, exactly as the SPA does. Since R3.2 the dashboard mutations carry the anti-forgery token from `GET /api/auth/xsrf`, exactly as the SPA sends it. |
 | `tests/OpenCsms.Suite/Api/TariffEditingContracts.cs` | The tariff repricing contracts (R3.2): anonymous repricing is 401, a viewer with a valid token is 403, an operator without the token is 400, another tenant's tariff is 404, and a negative value in any of the four prices - energy, start fee, idle fee, grace period - is 400 with all four prices provably unchanged. The billing proof bills one session each side of a repricing: the stored invoice keeps 8.80/10.30 while the new session bills 12.10/13.60 at the new energy price. |
+| `tests/OpenCsms.Suite/Journeys/IdleFeeAfterTariffChange.cs` | The trace showpiece, a real regression the product caught and fixed: a session charges 22 kWh, the test clock advances five hours, the operator reprices the tariff to drop the idle fee while the session is open, and the unplug ends it. Billing used to read the tariff when the worker processed `session.ended`, so the invoice billed 13.60 where the tariff the session started under promised 20.30; the failing trace recorded before the fix (242 KB for the one test) is the historical evidence at `artifacts/showpiece/opencsms.prototrace`. The fix copies the tariff's terms onto the session at start, so the repricing never reaches it: the journey asserts 20.30, keeps `Category("Showpiece")` as its name, and runs in the container gate. `pwsh eng/run-showpiece.ps1` reruns it alone and writes the fresh trace to `artifacts/showpiece/opencsms-rerun.prototrace`, leaving the historical one untouched. |
 | `tests/OpenCsms.Suite/Api/TenantIsolation.cs` | The multi-tenancy negative test (R3.2): one operator's reads of another tenant's station, station sessions and invoice answer 404 exactly like unknown ids, in both directions, and the station/tariff lists carry only the signed-in tenant's rows. The foreign invoice comes from the run's seeded month and the foreign session is an open REST session, so no broker or worker is needed; the second test pins the seeded tenants against each other (120 invoices each, no shared id). |
 | `tests/OpenCsms.Suite/Api/MachineApiCredentials.cs` | The machine surface's credential contracts (M4.3): the management routes answer 401 without a key and with a key no tenant owns, so the refusals prove the credential rather than a broken route — the same route with the tenant's valid key answers 201, and a signed-in dashboard cookie does not unlock it. A key reaches exactly the tenant it was issued for: another tenant's station and connectors answer 404 like unknown ids, a session start on the foreign station is refused before the station is touched, and the neighbor's key can neither read nor end the test's session, which stays open, while the neighbor's own key does reach its station. The tenant and its one-time key come from `POST /api/tenants`, the product's own registration route. |
 | `tests/OpenCsms.Suite/Journeys/InvoiceNotificationsReachTheExternalTarget.cs` | The notification path (M4.3b), against `ProtoTest.WireMock` fakes standing in for the external targets. Journey one: the billing worker issues an invoice, the notification worker consumes `invoice.issued` and POSTs it to the invoice-ready fake; the request the fake served has the invoice's own path (`/notifications/invoice-ready/{invoiceId}`, matched, answered 202) and its logged body carries the invoice's data — the event discriminator, invoice id, session id, tenant, total, currency and the run clock's instant. Journey two: a `session.ended` naming a session the store does not know is retried and dead-lettered by the billing worker, which publishes `billing.failed`; the notification worker pushes the failure to the alerting fake at the session's path with the recorded reason and the run clock's instant, and the fake accepts it. |
@@ -33,7 +34,7 @@ the same commit as the behavior it describes.
 | `tests/OpenCsms.Suite/Billing/RedeliveryTests.cs` | The worker's republish-on-redelivery path (R1a-01): after the journey's setup created the invoice, the product's own `session.ended` payload is published a second time on the product exchange and routing key; `invoice.issued` must arrive again with the same invoice id, and the store must still hold exactly one invoice row for the session (counted through the product's own data registration). Needs worker and broker. |
 | `tests/OpenCsms.Suite/Billing/OutboxTests.cs` | The session-end outbox under a publish failure (M4.2/M4.4): the substituted publisher fails the request's own attempt, the end still commits and its event stays pending in the store; the dispatcher retries the row, the retry travels the real broker, the worker bills once, and the row is marked sent. The second test rides out a two-failure outage: the substituted publisher fails this session's first two attempts - the request's own and the first backed-off retry, driven through the store's own dispatch while the event's unit of work is still open - the store records both failed attempts and schedules the longer second backoff, and the delivered row is marked sent with exactly one invoice. Needs the broker and the worker. |
 | `tests/OpenCsms.Suite/Messaging/RabbitMqEventPublisherTests.cs` | The publisher's recovery (R1a-03): a channel whose connection was closed out from under the publisher is not reused; the next publish opens a new connection and reaches the exchange. Needs the broker only. |
-| `tests/OpenCsms.Domain.Tests/InvoiceCalculatorTests.cs` | Tariff math: energy at the tariff price, the start fee once per session, per-component rounding away from zero, and the idle rule — idle = stop − last meter value − grace, billed at `ceil(hours)` only when strictly positive: within the grace period, exactly at the grace boundary and one second past its edge (one started hour), every started hour beyond it, rounding up to the started hour, and the idle fee's own money rounding. Plus the rejection rules (open session, foreign tariff, regressing meter value, meter after the session ended, end before the last meter value). |
+| `tests/OpenCsms.Domain.Tests/InvoiceCalculatorTests.cs` | Tariff math over the session's own snapshot: energy at the price the session started under, the start fee once per session, per-component rounding away from zero, and the idle rule — idle = stop − last meter value − grace, billed at `ceil(hours)` only when strictly positive: within the grace period, exactly at the grace boundary and one second past its edge (one started hour), every started hour beyond it, rounding up to the started hour, and the idle fee's own money rounding. Plus the snapshot rule: a repricing while the session is open leaves its bill at the old prices, a session started after the repricing bills the new ones, and an issued invoice keeps its numbers. Plus the rejection rules (open session, regressing meter value, meter after the session ended, end before the last meter value); a session cannot start under another tenant's tariff (`ChargingSessionTests`). |
 
 The suite runs its tests in parallel (`tests/OpenCsms.Suite/NUnitParallelization.cs`); every test
 owns its tenant, tariff and station (and its charge point identity, for the OCPP journeys), and the
@@ -57,21 +58,23 @@ idle-fee/register journeys, the duplicate-stop `EndedAtUtc` assertion, the REST-
 and the browser download journey - so they run where the suite's clock reaches the system under test
 and report as skipped against a running stack; the remote-timeout journey reads the API's effective
 `Ocpp:RemoteCallTimeoutSeconds` instead of assuming the in-process two seconds. The default mode is
-verified with fresh Testcontainers including the seven Chromium journeys (74/74,
-`artifacts/gates/opencsms-container-20260928-091846.log`; the notification journeys run there too;
-re-recorded after the AppHost selection change), configured mode against one persistent
-docker-run PostgreSQL and RabbitMQ (64/64, `artifacts/gates/opencsms-configured-20260927-195250.log`;
-the seed was already in place, which is the idempotency proof; measured before the outbox,
-machine-credential and notification stages), and published mode by the local rehearsal described in
+verified with fresh Testcontainers including the seven Chromium journeys and the showpiece journey
+(75/75, `artifacts/gates/opencsms-container-20260928-160535.log`; the notification journeys run
+there too), configured mode against the persistent
+docker-run PostgreSQL and RabbitMQ (75/75, `artifacts/gates/opencsms-configured-20260928-160616.log`;
+its seed was already in place, which is the idempotency proof, and the tariff-snapshot migration
+ran over the sessions stored before it), and published mode by the local rehearsal described in
 the README
-(`artifacts/gates/opencsms-published-20260928-085449.log`: 61 passed, 13 skipped - the same seven
+(`artifacts/gates/opencsms-published-20260928-085449.log`, recorded before the tariff fix when the
+showpiece journey was outside the gate: 61 passed, 13 skipped - the same seven
 clock journeys plus the six in-process-gated ones, the two outbox substitutions and the four
 notification journeys; the API and the billing worker run as real processes, the notification
 worker process idles without target keys). The switch itself is rehearsed too: a fresh-container run with
 `ProtoTest__Seed=off` reports the six seeded journeys skipped and stores no seed
 (`artifacts/gates/opencsms-container-20260927-195618.log`: 58 passed, 6 skipped; measured before
 the outbox, machine-credential and notification stages). Topology mode is verified through the
-AppHost (`artifacts/gates/opencsms-topology-20260928-092028.log`: 61 passed, 13 skipped): the run
+AppHost (`artifacts/gates/opencsms-topology-20260928-092028.log`, recorded before the tariff fix
+when the showpiece journey was outside the gate: 61 passed, 13 skipped): the run
 sets `ProtoTest__Aspire__Enabled`, the integration's selection key, so the AppHost serves; with the
 key unset - the container leg - the AppHost target resolves to its unselected fallback and never
 starts. The AppHost's project resources run the API and both workers and its containers serve
@@ -86,7 +89,10 @@ The schema migration from M1 to M2 was verified on a database that already held 
 the new `ChargePointId` column is added nullable, backfilled from each station's own id (no duplicate
 keys), and only then made required and unique, while `TransactionId` is an identity column that fills
 existing sessions from its sequence. R2.3's `Sessions.MeterStartKwh` column defaults to zero, which is
-the baseline sessions written before it implicitly had. R3.1's `Users` table is a new table
+the baseline sessions written before it implicitly had. The tariff snapshot adds the five
+`Sessions.Tariff*` columns nullable, fills every stored session from its station's tariff, and only
+then makes them required; the configured-mode run migrated a database that already held 2,606
+sessions and reported none without a snapshot. R3.1's `Users` table is a new table
 (`DashboardUsers`), so its migration adds rows to no existing data.
 
 Every run writes its evidence under `TestResults/OpenCsms/` beside the built test assembly:

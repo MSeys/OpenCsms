@@ -4,13 +4,15 @@ namespace OpenCsms.Domain;
 /// One charging session: started at a station connector, fed meter values in time order, ended by a
 /// stop transaction. A real connector's meter is a register that keeps counting across sessions, so
 /// the session remembers <see cref="MeterStartKwh"/> and <see cref="EnergyKwh"/> is only what this
-/// session added on top of it.
+/// session added on top of it. The session also remembers the tariff terms it started under, so a
+/// repricing while it is open cannot change what it bills.
 /// </summary>
 public sealed class ChargingSession
 {
     private ChargingSession()
     {
         TenantId = string.Empty;
+        Tariff = null!;
     }
 
     private ChargingSession(
@@ -19,6 +21,7 @@ public sealed class ChargingSession
         Guid stationId,
         int connectorId,
         DateTimeOffset startedAtUtc,
+        Tariff tariff,
         decimal meterStartKwh)
     {
         Id = id;
@@ -27,6 +30,7 @@ public sealed class ChargingSession
         ConnectorId = connectorId;
         StartedAtUtc = startedAtUtc;
         LastMeterAtUtc = startedAtUtc;
+        Tariff = SessionTariff.From(tariff);
         MeterStartKwh = meterStartKwh;
     }
 
@@ -45,6 +49,9 @@ public sealed class ChargingSession
 
     public DateTimeOffset? EndedAtUtc { get; private set; }
 
+    /// <summary>The tariff terms this session bills under, copied when it started.</summary>
+    public SessionTariff Tariff { get; private set; }
+
     /// <summary>The connector's meter register when this session started, in kilowatt-hours.</summary>
     public decimal MeterStartKwh { get; private set; }
 
@@ -62,16 +69,19 @@ public sealed class ChargingSession
     /// <summary>
     /// Starts a session at the connector's current meter register. The register is the baseline every
     /// later reading is billed against, so a second session on the same connector bills its own energy
-    /// only.
+    /// only. The tariff's terms are copied onto the session, so the session keeps billing what it
+    /// started under even when the tariff is repriced while it is open.
     /// </summary>
     public static ChargingSession Start(
         string tenantId,
         Guid stationId,
         int connectorId,
         DateTimeOffset startedAtUtc,
+        Tariff tariff,
         decimal meterStartKwh = 0m)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(tenantId);
+        ArgumentNullException.ThrowIfNull(tariff);
         if (stationId == Guid.Empty)
         {
             throw new ArgumentException("A session needs a station.", nameof(stationId));
@@ -82,6 +92,12 @@ public sealed class ChargingSession
             throw new ArgumentOutOfRangeException(nameof(connectorId), connectorId, "Connectors are numbered from one.");
         }
 
+        if (!string.Equals(tenantId, tariff.TenantId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Tariff '{tariff.Id}' belongs to tenant '{tariff.TenantId}', not to session tenant '{tenantId}'.");
+        }
+
         if (meterStartKwh < 0m)
         {
             throw new ArgumentOutOfRangeException(
@@ -90,7 +106,7 @@ public sealed class ChargingSession
                 "A meter cannot start at a negative reading.");
         }
 
-        return new ChargingSession(Guid.NewGuid(), tenantId, stationId, connectorId, startedAtUtc, meterStartKwh);
+        return new ChargingSession(Guid.NewGuid(), tenantId, stationId, connectorId, startedAtUtc, tariff, meterStartKwh);
     }
 
     /// <summary>

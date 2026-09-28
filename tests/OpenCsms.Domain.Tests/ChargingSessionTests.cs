@@ -12,10 +12,12 @@ public sealed class ChargingSessionTests
 {
     private static readonly DateTimeOffset Start = new(2026, 1, 15, 10, 0, 0, TimeSpan.Zero);
 
+    private static Tariff Tariff() => Domain.Tariff.Create("acme", "Standard", 0.40m);
+
     [Test]
     public void AddMeterValue_ShouldBillOnlyTheEnergyAboveTheStartReading()
     {
-        var session = ChargingSession.Start("acme", Guid.NewGuid(), 1, Start, meterStartKwh: 22m);
+        var session = ChargingSession.Start("acme", Guid.NewGuid(), 1, Start, Tariff(), meterStartKwh: 22m);
 
         session.AddMeterValue(Start + TimeSpan.FromMinutes(5), 27m);
 
@@ -30,7 +32,7 @@ public sealed class ChargingSessionTests
     [Test]
     public void AddMeterValue_ShouldRejectAReadingBelowTheStartReading()
     {
-        var session = ChargingSession.Start("acme", Guid.NewGuid(), 1, Start, meterStartKwh: 22m);
+        var session = ChargingSession.Start("acme", Guid.NewGuid(), 1, Start, Tariff(), meterStartKwh: 22m);
 
         Assert.That(
             () => session.AddMeterValue(Start + TimeSpan.FromMinutes(5), 21m),
@@ -41,7 +43,7 @@ public sealed class ChargingSessionTests
     [Test]
     public void Stop_ShouldIgnoreADuplicateStop()
     {
-        var session = ChargingSession.Start("acme", Guid.NewGuid(), 1, Start);
+        var session = ChargingSession.Start("acme", Guid.NewGuid(), 1, Start, Tariff());
 
         Assert.Multiple(() =>
         {
@@ -55,7 +57,34 @@ public sealed class ChargingSessionTests
     public void Start_ShouldRejectANegativeMeterStart()
     {
         Assert.That(
-            () => ChargingSession.Start("acme", Guid.NewGuid(), 1, Start, meterStartKwh: -1m),
+            () => ChargingSession.Start("acme", Guid.NewGuid(), 1, Start, Tariff(), meterStartKwh: -1m),
             Throws.TypeOf<ArgumentOutOfRangeException>().With.Property("ParamName").EqualTo("meterStartKwh"));
+    }
+
+    [Test]
+    public void Start_ShouldRejectATariffFromAnotherTenant()
+    {
+        var foreignTariff = Domain.Tariff.Create("other", "Foreign", 0.40m);
+
+        Assert.That(
+            () => ChargingSession.Start("acme", Guid.NewGuid(), 1, Start, foreignTariff),
+            Throws.InvalidOperationException.With.Message.Contains("tenant"));
+    }
+
+    [Test]
+    public void Start_ShouldCopyTheTariffsTermsSoALaterRepriceDoesNotReachTheSession()
+    {
+        var tariff = Domain.Tariff.Create("acme", "Standard", 0.40m, 1.50m, 2.00m, TimeSpan.FromMinutes(10));
+
+        var session = ChargingSession.Start("acme", Guid.NewGuid(), 1, Start, tariff);
+        tariff.UpdatePricing(0.55m, 2.00m, 0m, TimeSpan.FromMinutes(1));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(session.Tariff.EnergyPricePerKwh, Is.EqualTo(0.40m), "the session keeps the price it started under");
+            Assert.That(session.Tariff.StartFee, Is.EqualTo(1.50m));
+            Assert.That(session.Tariff.IdleFeePerHour, Is.EqualTo(2.00m));
+            Assert.That(session.Tariff.IdleGracePeriod, Is.EqualTo(TimeSpan.FromMinutes(10)));
+        });
     }
 }

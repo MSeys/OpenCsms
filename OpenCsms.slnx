@@ -11,6 +11,7 @@
     <Project Path="src/OpenCsms.Protocol.Ocpp/OpenCsms.Protocol.Ocpp.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/OpenCsms.Benchmarks/OpenCsms.Benchmarks.csproj" />
     <Project Path="tests/OpenCsms.Domain.Tests/OpenCsms.Domain.Tests.csproj" />
     <Project Path="tests/OpenCsms.Suite/OpenCsms.Suite.csproj" />
   </Folder>

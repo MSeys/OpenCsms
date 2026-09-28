@@ -7,11 +7,13 @@ using OpenCsms.Domain;
 /// Opens the session a charge point's StartTransaction asks for: the connector must be one the
 /// station serves and the id tag must be present; a connector that is already charging points the
 /// charge point at the running transaction instead of opening a second one. The reported register is
-/// the new session's baseline, so a second session on the connector bills only what it adds.
+/// the new session's baseline, so a second session on the connector bills only what it adds, and the
+/// station's tariff is copied onto the session, so a later repricing cannot change its bill.
 /// </summary>
 public sealed class TransactionStart(
     ISessionQueries sessionQueries,
     ISessionCommands sessionCommands,
+    ITariffQueries tariffs,
     TimeProvider clock)
 {
     /// <summary>Starts the transaction, or reports the state that refused it.</summary>
@@ -39,11 +41,13 @@ public sealed class TransactionStart(
             return new TransactionConcurrent(open);
         }
 
+        var tariff = await tariffs.FindAsync(station.TariffId, cancellationToken)
+            ?? throw new InvalidOperationException($"Station '{station.Id}' names tariff '{station.TariffId}', which is not in the store.");
         var now = clock.GetUtcNow();
         ChargingSession session;
         try
         {
-            session = ChargingSession.Start(station.TenantId, station.Id, connectorId, now, meterStartKwh);
+            session = ChargingSession.Start(station.TenantId, station.Id, connectorId, now, tariff, meterStartKwh);
         }
         catch (ArgumentOutOfRangeException exception)
         {

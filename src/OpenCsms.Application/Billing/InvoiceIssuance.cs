@@ -7,18 +7,17 @@ using OpenCsms.Domain;
 
 /// <summary>
 /// The billing use case behind a delivered <c>session.ended</c>: issue the session's invoice exactly
-/// once, then publish <c>invoice.issued</c>. The unique session index in the store makes the issue
-/// idempotent; publishing is mandatory on every delivery, including a redelivery, and a failed
-/// publish surfaces to the caller so its retry path sees it. The invoice is stamped with the
-/// application clock, not the machine's. Delivery, retries and dead-lettering are the transport
-/// host's business, not this use case's.
+/// once, then publish <c>invoice.issued</c>. The bill uses the tariff terms the session started
+/// under, so a repricing while the session was open cannot change it. The unique session index in
+/// the store makes the issue idempotent; publishing is mandatory on every delivery, including a
+/// redelivery, and a failed publish surfaces to the caller so its retry path sees it. The invoice is
+/// stamped with the application clock, not the machine's. Delivery, retries and dead-lettering are
+/// the transport host's business, not this use case's.
 /// </summary>
 public sealed class InvoiceIssuance(
     IInvoiceQueries invoiceQueries,
     IInvoiceCommands invoiceCommands,
     ISessionQueries sessions,
-    IStationQueries stations,
-    ITariffQueries tariffs,
     IEventPublisher publisher,
     TimeProvider clock,
     ILogger<InvoiceIssuance> logger)
@@ -32,12 +31,8 @@ public sealed class InvoiceIssuance(
         {
             var session = await sessions.FindAsync(message.SessionId, cancellationToken)
                 ?? throw new InvalidOperationException($"Session '{message.SessionId}' is not in the store.");
-            var station = await stations.FindAsync(session.StationId, cancellationToken)
-                ?? throw new InvalidOperationException($"Station '{session.StationId}' is not in the store.");
-            var tariff = await tariffs.FindAsync(station.TariffId, cancellationToken)
-                ?? throw new InvalidOperationException($"Tariff '{station.TariffId}' is not in the store.");
 
-            invoice = InvoiceCalculator.Calculate(session, tariff, clock.GetUtcNow());
+            invoice = InvoiceCalculator.Calculate(session, clock.GetUtcNow());
             await invoiceCommands.AddAsync(invoice, cancellationToken);
             logger.LogInformation("Billed session '{SessionId}' as invoice '{InvoiceId}'.", session.Id, invoice.Id);
         }
