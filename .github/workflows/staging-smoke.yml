@@ -1,0 +1,103 @@
+# The optional staging smoke: published mode against a stack someone else runs.
+#
+# Honest state: no staging target exists, so this workflow is authored and guarded and has never
+# run - nothing here claims a staging result. It is dispatch-only because it needs both a target
+# and five repository secrets, and dispatching it without them fails in the first step with the
+# names of the missing secrets.
+#
+# Published mode is configuration, not code: with the five keys below set, the suite's provider
+# chains step aside and its clients and taps target the staging addresses; the staging stack runs
+# the API, the dashboard, both workers and its own clock, so the clock-dependent and in-process
+# journeys skip exactly as the README's mode table records. `eng/run-suite.ps1 -Mode published` is
+# the local rehearsal of this configuration - it starts its own stack first - so the smoke runs the
+# suite directly, the README's "To point the same suite at a stack someone else runs" path, with
+# the stack left running.
+
+name: Staging smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  published:
+    name: published mode (staging)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      ConnectionStrings__Csms: ${{ secrets.CSMS_CONNECTION_STRING }}
+      Messaging__RabbitMq__ConnectionString: ${{ secrets.CSMS_RABBITMQ_CONNECTION_STRING }}
+      ProtoTest__Messaging__RabbitMq__ConnectionString: ${{ secrets.PROTOTEST_RABBITMQ_CONNECTION_STRING }}
+      ProtoTest__Applications__Csms__BaseUrl: ${{ secrets.CSMS_BASE_URL }}
+      ProtoTest__Applications__Dashboard__BaseUrl: ${{ secrets.DASHBOARD_BASE_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # net8.0 is every project's target; 10.0.x is the SDK line the published rehearsal recorded
+      # its evidence with. No NuGet cache, for the reason ci.yml records.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src/OpenCsms.Dashboard/package-lock.json
+
+      # Unset secrets reach a job as empty strings; name what is missing before anything runs.
+      - name: Require the staging secrets
+        shell: pwsh
+        run: |
+          $required = @(
+            "ConnectionStrings__Csms",
+            "Messaging__RabbitMq__ConnectionString",
+            "ProtoTest__Messaging__RabbitMq__ConnectionString",
+            "ProtoTest__Applications__Csms__BaseUrl",
+            "ProtoTest__Applications__Dashboard__BaseUrl"
+          )
+          $missing = @($required | Where-Object { [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_)) })
+          if ($missing.Count -gt 0) {
+            throw "No staging target is configured: missing secrets for $($missing -join ', '). Set all five before dispatching this job."
+          }
+
+      # The browser journeys need Chromium and its system libraries; the API and the dashboard are
+      # the staging stack's, so this installs the browser only and starts no local process.
+      - name: Build the suite and install Chromium
+        shell: pwsh
+        run: |
+          dotnet build tests/OpenCsms.Suite/OpenCsms.Suite.csproj --configuration Release
+          pwsh tests/OpenCsms.Suite/bin/Release/net8.0/playwright.ps1 install --with-deps chromium
+
+      # The browser journeys carry the suite's dashboard-build gate, which reads the local bundle
+      # even when the dashboard they drive is the staging one; building it here runs them instead
+      # of skipping them. `eng/run-suite.ps1` builds the dashboard before every mode for the same
+      # reason. ProtoTest:Seed=off keeps the smoke from writing the seeded volume into a shared
+      # staging database; the seeded journeys skip with it, as the README documents. The log goes
+      # to the same artifacts/gates name the other legs use, with a published-staging prefix so it
+      # can never be mistaken for the local rehearsal's log.
+      - name: Run the suite against the staging stack
+        shell: pwsh
+        env:
+          ProtoTest__Seed: "off"
+        run: |
+          pwsh eng/build-dashboard.ps1
+          $log = "artifacts/gates/opencsms-published-staging-$((Get-Date).ToString('yyyyMMdd-HHmmss')).log"
+          New-Item -ItemType Directory -Path (Split-Path -Parent $log) -Force | Out-Null
+          dotnet test tests/OpenCsms.Suite --configuration Release --nologo 2>&1 | Tee-Object -FilePath $log
+          if ($LASTEXITCODE -ne 0) { throw "The staging smoke failed with exit code $LASTEXITCODE; the log is $log." }
+          Write-Host "evidence: $log"
+
+      - name: Upload the evidence log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencsms-staging-log
+          path: artifacts/gates/opencsms-published-staging-*.log
+          if-no-files-found: warn

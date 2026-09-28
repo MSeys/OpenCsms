@@ -397,6 +397,27 @@ A compose file for the deployment-shaped rehearsal is not built yet; the publish
 product's own processes against the two containers, and the topology leg starts the same resources
 through the AppHost instead.
 
+## CI
+
+Three GitHub Actions workflows map to the mode table; each one runs the same command a developer
+runs locally, so CI proves the modes rather than a CI-shaped path around them:
+
+| Workflow | Trigger | Runs |
+| --- | --- | --- |
+| `.github/workflows/ci.yml` | push to `main`, pull request, dispatch | `eng/run-suite.ps1 -Mode container` — the fast leg: the in-process product on fresh Testcontainers, the Chromium journeys included |
+| `.github/workflows/nightly.yml` | nightly schedule, dispatch | `eng/run-suite.ps1 -Mode topology` — the AppHost leg: its containers and the product's worker processes |
+| `.github/workflows/staging-smoke.yml` | dispatch only | published mode against a stack someone else runs: the five keys (`ConnectionStrings__Csms`, `Messaging__RabbitMq__ConnectionString`, `ProtoTest__Messaging__RabbitMq__ConnectionString`, `ProtoTest__Applications__Csms__BaseUrl`, `ProtoTest__Applications__Dashboard__BaseUrl`) from repository secrets, then `dotnet test` |
+
+Each job builds the dashboard, installs Chromium with its system libraries, and uploads the run's
+`artifacts/gates/opencsms-*.log` evidence file.
+
+The honest state: this repository has no remote yet, so no workflow has run on GitHub — the
+evidence is the local rehearsal of the container and topology legs. A hosted run also needs the 1.1
+ProtoTest packages reachable, because `NuGet.config` maps `ProtoTest.*` to the sibling checkout's
+feed until 1.1 is published (see [Packages](#packages)). The staging smoke is authored and guarded
+and is never claimed as run: no staging target exists, and a dispatch without all five secrets
+fails with the missing key names before anything starts.
+
 ## Packages
 
 This repository consumes ProtoTest packages. While 1.1 is under development it resolves them from a

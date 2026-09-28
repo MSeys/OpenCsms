@@ -1,0 +1,76 @@
+# The nightly topology leg: the same suite through the suite-owned Aspire AppHost
+# (`eng/run-suite.ps1 -Mode topology`), which starts PostgreSQL, RabbitMQ, the API (serving the
+# dashboard) and both workers as real processes and lets the suite's provider chains resolve to
+# them. It is the slow leg - DCP container pulls and process starts on top of the container leg's
+# work - so it runs on a schedule and on dispatch, never on every PR.
+#
+# Honesty note: this repository has no remote yet, so this file has not run on GitHub. The evidence
+# for the topology leg is a local rehearsal of the same command. A hosted run additionally needs
+# the 1.1 ProtoTest packages reachable (NuGet.config maps ProtoTest.* to the sibling checkout's
+# local feed while 1.1 is under development; README, "Packages"), and scheduled workflows only run
+# on the default branch once one exists.
+
+name: Nightly topology
+
+on:
+  schedule:
+    # 03:17 UTC. GitHub starts scheduled runs best-effort, so the minute is not load-bearing.
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  topology:
+    name: topology mode
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The same lines as ci.yml: net8.0 is every project's target, and 10.0.x is the SDK the
+      # topology leg was rehearsed with (Aspire 13.5.4's pick-best-RID path). DCP itself is
+      # native and ships inside the Aspire.Hosting.Orchestration.<rid> package that restore
+      # selects for the runner's platform, so nothing extra installs here. No NuGet cache, for
+      # the reason ci.yml records: the branch feed changes under a fixed version.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src/OpenCsms.Dashboard/package-lock.json
+
+      # The AppHost starts its PostgreSQL and RabbitMQ containers through DCP, so the runner's
+      # Docker daemon is part of the topology. Fail here, in one line, if it is missing.
+      - name: Check the container runtime
+        run: docker version
+
+      # The topology leg runs the seven Chromium journeys too, against the API project resource's
+      # own address; install the browser and its system libraries as the container job does.
+      - name: Build the suite and install Chromium
+        shell: pwsh
+        run: |
+          dotnet build tests/OpenCsms.Suite/OpenCsms.Suite.csproj --configuration Release
+          pwsh tests/OpenCsms.Suite/bin/Release/net8.0/playwright.ps1 install --with-deps chromium
+
+      - name: Run the suite in topology mode
+        shell: pwsh
+        run: ./eng/run-suite.ps1 -Mode topology
+
+      # Topology mode writes no per-process log files: DCP runs the AppHost and its resources in
+      # the testing host's process, so the evidence log carries their output. Unlike published
+      # mode there are no opencsms-topology-<timestamp>-<name>.log siblings to upload.
+      - name: Upload the evidence log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencsms-topology-log
+          path: artifacts/gates/opencsms-topology-*.log
+          if-no-files-found: error

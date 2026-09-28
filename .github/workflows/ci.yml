@@ -1,0 +1,75 @@
+# The PR fast leg: the suite's default mode - the API and both workers in-process, PostgreSQL and
+# RabbitMQ as fresh Testcontainers, the seven Chromium journeys included. The whole job is the same
+# command a developer runs locally, `eng/run-suite.ps1 -Mode container`, so CI proves the mode
+# rather than a CI-shaped path around it.
+#
+# Honesty note: this repository has no remote yet, so this file has not run on GitHub. The evidence
+# for the container leg is a local rehearsal of the same command. A hosted run additionally needs
+# the 1.1 ProtoTest packages reachable: NuGet.config maps ProtoTest.* to the sibling checkout's
+# local feed while 1.1 is under development (README, "Packages"), and nuget.org carries 1.0.x only.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  container:
+    name: container mode
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # net8.0 is every project's target. The 10.0.x SDK is the line the mode legs were rehearsed
+      # with: Aspire 13.5.4 resolves DCP's runtime identifier through the SDK's own pick-best-RID
+      # path at 10.0.100 and later, and only falls back to its net8.0 tool below that. There is
+      # deliberately no NuGet package cache in this job: the branch's ProtoTest packages keep
+      # their 1.1.0-alpha.1 version while their content changes with every repack, so a cached
+      # global packages folder can serve a stale feed.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src/OpenCsms.Dashboard/package-lock.json
+
+      # Container mode's store and broker are Testcontainers, so the runner's own Docker daemon is
+      # the runtime. Fail here, in one line, instead of inside the suite's setup.
+      - name: Check the container runtime
+        run: docker version
+
+      # The browser journeys need Chromium and the operating-system libraries it loads.
+      # `InstallBrowsers` in the suite installs the binary but not those libraries on a clean
+      # image, so install both here first; the suite's own run then finds the browser present.
+      - name: Build the suite and install Chromium
+        shell: pwsh
+        run: |
+          dotnet build tests/OpenCsms.Suite/OpenCsms.Suite.csproj --configuration Release
+          pwsh tests/OpenCsms.Suite/bin/Release/net8.0/playwright.ps1 install --with-deps chromium
+
+      - name: Run the suite in container mode
+        shell: pwsh
+        run: ./eng/run-suite.ps1 -Mode container
+
+      # The run script tees the suite's output to artifacts/gates/opencsms-container-<timestamp>.log;
+      # the artifact keeps it when the job fails, which is when the evidence matters most.
+      - name: Upload the evidence log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencsms-container-log
+          path: artifacts/gates/opencsms-container-*.log
+          if-no-files-found: error
