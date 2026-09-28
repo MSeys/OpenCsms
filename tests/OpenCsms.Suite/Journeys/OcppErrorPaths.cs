@@ -268,7 +268,7 @@ public sealed class OcppErrorPaths
         }
 
         // Assert: the session survived the storm intact, and the registry's single entry reaches the
-        // live connection — the remote start the gateway forwards is answered by this device.
+        // live connection, where the remote start the gateway forwards is answered by this device.
         var stored = await GetSessionAsync(op.StationId);
         var startRequest = Proto.Context.Rest()
             .Body(new { idTag = "card-7", connectorId = 2 })

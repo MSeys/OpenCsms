@@ -4,8 +4,8 @@ using NUnit.Framework;
 
 /// <summary>
 /// The tariff's repricing rules: what an operator admin may change, what stays fixed, and what the
-/// domain refuses. Sessions billed before the change keep their stored invoices; only new sessions
-/// bill at the new prices.
+/// domain refuses. Sessions already billed keep their stored invoices; only sessions billed after a
+/// repricing use the new prices.
 /// </summary>
 [TestFixture]
 public sealed class TariffPricingTests

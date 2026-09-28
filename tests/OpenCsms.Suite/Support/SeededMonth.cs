@@ -240,7 +240,7 @@ public sealed record SeededTenant(
     string LoginPassword);
 
 /// <summary>
-/// Skips the journeys that read the seeded busy month when the run did not ensure it, so a staging
+/// Skips the journeys that read the seeded busy month when the run did not seed it, so a staging
 /// run that leaves the target's data alone (<c>ProtoTest:Seed=off</c>) reports those journeys as
 /// skipped rather than failing on missing seed data.
 /// </summary>

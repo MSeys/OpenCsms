@@ -22,7 +22,7 @@ public sealed class SessionEnding(ISessionCommands sessions, IOutbox outbox)
     {
         ArgumentNullException.ThrowIfNull(session);
         // The aggregate's stop is idempotent for a device that resends it; the REST caller treats a
-        // duplicate end as the caller error it is, exactly as before.
+        // duplicate end as the caller error it is.
         if (!session.Stop(endedAtUtc))
         {
             throw new InvalidOperationException("The session has already ended.");

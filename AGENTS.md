@@ -1,4 +1,4 @@
-# AGENTS.md — contributor contract
+# AGENTS.md: contributor contract
 
 OpenCSMS is a small CSMS and the reference suite for ProtoTest. The README and COVERAGE.md carry
 status and coverage; this file is the short contract for working here.
@@ -13,7 +13,7 @@ something a layer already owns.
 ## Comments
 
 Comments describe the code as it stands. No audit IDs, plan items, milestone/phase names or review
-references in source comments — write the reason the code is what it is instead.
+references in source comments: write the reason the code is what it is instead.
 
 ## Verification
 

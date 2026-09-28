@@ -94,7 +94,7 @@ public sealed class StationDetailPage : DashboardPage
 
     public WebElement Back => Element(By.TestId("station-back"));
 
-    public WebElement StationError => Element(By.TestId("station-error"));// The failed load panel.
+    public WebElement StationError => Element(By.TestId("station-error")); // The failed load panel.
 
     public WebElement SessionsEmpty => Element(By.TestId("sessions-empty"));
 
