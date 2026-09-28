@@ -1,18 +1,17 @@
 namespace OpenCsms.Suite.Journeys;
 
 using System.Net;
-using System.Text;
 using System.Text.Json;
 using OpenCsms.Contracts;
 using OpenCsms.Infrastructure.Notifications;
 using OpenCsms.Suite.Support;
 using ProtoTest.Core;
 using ProtoTest.Http;
+using ProtoTest.Json;
 using ProtoTest.Messaging;
 using ProtoTest.NUnit;
 using ProtoTest.Rest;
 using ProtoTest.WireMock;
-using RabbitMQ.Client;
 using BillingWorker = OpenCsms.Billing.Worker.Program;
 using NotificationWorker = OpenCsms.Notification.Worker.Program;
 
@@ -42,7 +41,6 @@ public sealed class NotificationTargetOutagesAreDeadLettered
     /// <summary>Completed retries before the fourth attempt is dead-lettered.</summary>
     private const int MaxRetries = 3;
     private static readonly TimeSpan DeliveryTimeout = TimeSpan.FromSeconds(30);
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     [ProtoTest]
     [RequiresTestClock]
@@ -62,13 +60,12 @@ public sealed class NotificationTargetOutagesAreDeadLettered
 
         // Assert: the consumer retried the delivery and gave up; the dead letter carries the
         // invoice's ids and the completed-retry count.
-        await using var broker = await RabbitMqRawClient.ConnectAsync(Proto.Context);
-        var dead = await broker.AwaitAsync(
-            CsmsEvents.NotificationInvoiceIssuedDeadLetterQueue,
-            candidate => IsInvoiceIssuedFor(candidate, issued.InvoiceId),
+        var dead = await Proto.Context.Messaging().AwaitAsync(
+            CsmsEvents.NotificationsDeadLetterExchange,
+            candidate => CsmsMessages.IsInvoiceIssuedFor(candidate, started.Id),
             DeliveryTimeout);
-        var payload = JsonSerializer.Deserialize<InvoiceIssued>(dead.Body.Span, Json);
-        var retries = ReadRetries(dead.Properties);
+        var payload = dead.ReadRequired<InvoiceIssued>();
+        var retries = ReadRetries(dead);
 
         var requests = RequestsAt(target, path);
         var stored = await ReadInvoiceAsync(started.Id);
@@ -113,21 +110,21 @@ public sealed class NotificationTargetOutagesAreDeadLettered
             EnergyKwh: 1.5m);
         NotificationTargetStubs.Reject(target, NotificationSettings.BillingFailurePath, sessionId);
 
-        await using (var broker = await RabbitMqRawClient.ConnectAsync(Proto.Context))
-        {
-            await broker.PublishAsync(CsmsEvents.Exchange, CsmsEvents.SessionEndedRoutingKey, ended);
-        }
+        // Act: publish the poison on the product's exchange and routing key, bypassing the API.
+        await Proto.Context.Messaging().PublishAsync(
+            CsmsEvents.Exchange,
+            CsmsEvents.SessionEndedRoutingKey,
+            JsonSerializer.Serialize(ended, ProtoJsonDefaults.Web));
 
         // Assert: the report's delivery was retried and dead-lettered with the session's id and the
         // reason the billing worker recorded.
         var path = $"{NotificationSettings.BillingFailurePath}/{sessionId}";
-        await using var consumer = await RabbitMqRawClient.ConnectAsync(Proto.Context);
-        var dead = await consumer.AwaitAsync(
-            CsmsEvents.NotificationBillingFailedDeadLetterQueue,
-            candidate => IsBillingFailedFor(candidate, sessionId),
+        var dead = await Proto.Context.Messaging().AwaitAsync(
+            CsmsEvents.NotificationsDeadLetterExchange,
+            candidate => CsmsMessages.IsBillingFailedFor(candidate, sessionId),
             DeliveryTimeout);
-        var payload = JsonSerializer.Deserialize<SessionBillingFailed>(dead.Body.Span, Json);
-        var retries = ReadRetries(dead.Properties);
+        var payload = dead.ReadRequired<SessionBillingFailed>();
+        var retries = ReadRetries(dead);
         var requests = RequestsAt(target, path);
         var invoices = await CsmsDatabase.CountInvoicesAsync(Proto.Context, sessionId);
 
@@ -152,44 +149,16 @@ public sealed class NotificationTargetOutagesAreDeadLettered
     private static List<ProtoWireMockRequest> RequestsAt(ProtoWireMockClient target, string path)
         => [.. target.ReceivedRequests.Where(request => request.Path == path)];
 
-    private static bool IsInvoiceIssuedFor(RabbitMqRawDelivery delivery, Guid invoiceId)
+    private static int? ReadRetries(ProtoMessage delivery)
     {
-        try
-        {
-            return JsonSerializer.Deserialize<InvoiceIssued>(delivery.Body.Span, Json)?.InvoiceId == invoiceId;
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
-    }
-
-    private static bool IsBillingFailedFor(RabbitMqRawDelivery delivery, Guid sessionId)
-    {
-        try
-        {
-            return JsonSerializer.Deserialize<SessionBillingFailed>(delivery.Body.Span, Json)?.SessionId == sessionId;
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
-    }
-
-    private static int? ReadRetries(IReadOnlyBasicProperties properties)
-    {
-        if (properties.Headers is null || !properties.Headers.TryGetValue(RetriesHeader, out var value))
+        if (delivery.Headers is null
+            || !delivery.Headers.TryGetValue(RetriesHeader, out var value)
+            || value is null)
         {
             return null;
         }
 
-        return value switch
-        {
-            int number => number,
-            long number => (int)number,
-            byte[] bytes when int.TryParse(Encoding.UTF8.GetString(bytes), out var parsed) => parsed,
-            _ => null
-        };
+        return int.TryParse(value, out var parsed) ? parsed : null;
     }
 
     private static async Task<InvoiceIssued> AwaitInvoiceIssuedAsync(Guid sessionId)

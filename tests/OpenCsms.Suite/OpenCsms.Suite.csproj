@@ -16,10 +16,15 @@
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <!-- The Aspire testing host resolves Humanizer.Core 3.0.10 while WireMock's Handlebars helpers
+         still ask for the 2.14.1 satellite set; pinning the metapackage moves every satellite to the
+         resolved 3.0.10 in one place. -->
+    <PackageReference Include="Humanizer" Version="3.0.10" />
     <PackageReference Include="NUnit" Version="4.6.1" />
     <PackageReference Include="NUnit.Analyzers" Version="4.3.0" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
     <PackageReference Include="ProtoTest.AspNetCore" Version="1.1.0-alpha.1" />
+    <PackageReference Include="ProtoTest.Aspire" Version="1.1.0-alpha.1" />
     <PackageReference Include="ProtoTest.Data" Version="1.1.0-alpha.1" />
     <PackageReference Include="ProtoTest.Devices" Version="1.1.0-alpha.1" />
     <PackageReference Include="ProtoTest.Devices.WebSocket" Version="1.1.0-alpha.1" />
@@ -43,6 +48,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenCsms.Api\OpenCsms.Api.csproj" />
+    <ProjectReference Include="..\..\src\OpenCsms.AppHost\OpenCsms.AppHost.csproj" />
     <ProjectReference Include="..\..\src\OpenCsms.Billing.Worker\OpenCsms.Billing.Worker.csproj" />
     <ProjectReference Include="..\..\src\OpenCsms.Notification.Worker\OpenCsms.Notification.Worker.csproj" />
     <ProjectReference Include="..\..\src\OpenCsms.Infrastructure\OpenCsms.Infrastructure.csproj" />

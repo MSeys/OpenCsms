@@ -1,20 +1,23 @@
 namespace OpenCsms.Suite.Billing;
 
-using System.Text;
 using System.Text.Json;
 using OpenCsms.Contracts;
 using OpenCsms.Suite.Support;
 using ProtoTest.Core;
+using ProtoTest.Json;
+using ProtoTest.Messaging;
 using ProtoTest.NUnit;
-using RabbitMQ.Client;
 using BillingWorker = OpenCsms.Billing.Worker.Program;
 
 /// <summary>
 /// The billing worker's negative path: a <c>session.ended</c> naming a session the store does not know
 /// cannot be billed. The worker retries it in-process, then nacks it through the queue's dead-letter
 /// exchange; the API can only publish for sessions it knows, so this test publishes the poison itself
-/// on the product's exchange and routing key and asserts the delivery on the product's dead-letter
-/// queue. It touches no REST client and no fixed operator, so it runs alongside the journey.
+/// on the product's exchange and routing key and asserts the dead-lettered delivery through the
+/// framework. The dead letters are awaited on the product's dead-letter exchange: the tap binds a
+/// test-owned queue to it, and the product's own binding carries the same delivery into the
+/// dead-letter queue. It touches no REST client and no fixed operator, so it runs alongside the
+/// journey.
 /// </summary>
 [RequiresCapability(
     ProtoCapabilityKinds.Broker,
@@ -27,7 +30,6 @@ public sealed class DeadLetterTests
     /// <summary>Completed retries before the fourth attempt is dead-lettered.</summary>
     private const int MaxRetries = 3;
     private static readonly TimeSpan DeliveryTimeout = TimeSpan.FromSeconds(30);
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     [ProtoTest]
     public async Task AnUnbillableSessionEndedIsDeadLettered()
@@ -44,56 +46,46 @@ public sealed class DeadLetterTests
             EnergyKwh: 1.5m);
 
         // Act: publish on the product's exchange with the product's routing key, bypassing the API.
-        await using var broker = await RabbitMqRawClient.ConnectAsync(Proto.Context);
-        await broker.PublishAsync(CsmsEvents.Exchange, CsmsEvents.SessionEndedRoutingKey, ended);
+        await Proto.Context.Messaging().PublishAsync(
+            CsmsEvents.Exchange,
+            CsmsEvents.SessionEndedRoutingKey,
+            JsonSerializer.Serialize(ended, ProtoJsonDefaults.Web));
 
         // Assert: the worker gave up after its retries and dead-lettered this message, not another run's.
-        var delivery = await broker.AwaitAsync(
-            CsmsEvents.BillingDeadLetterQueue,
-            candidate => IsFor(candidate, sessionId),
+        var delivery = await Proto.Context.Messaging().AwaitAsync(
+            CsmsEvents.DeadLetterExchange,
+            candidate => CsmsMessages.IsSessionEndedFor(candidate, sessionId),
             DeliveryTimeout);
-        var payload = JsonSerializer.Deserialize<SessionEnded>(delivery.Body.Span, Json);
-        var retries = ReadRetries(delivery.Properties);
+        var payload = delivery.ReadRequired<SessionEnded>();
 
         Assert.Multiple(() =>
         {
             Assert.That(
-                payload?.SessionId,
+                payload.SessionId,
                 Is.EqualTo(sessionId),
                 "the dead-lettered message is the poison this test published");
             Assert.That(
-                retries,
+                delivery.RoutingKey,
+                Is.EqualTo(CsmsEvents.BillingQueue),
+                "the worker's retry republishes through the queue, so the dead letter carries the queue's " +
+                "routing key - the framework surfaces what the transport delivered");
+            Assert.That(
+                ReadRetries(delivery),
                 Is.EqualTo(MaxRetries),
                 $"the dead-lettered message records {MaxRetries} completed retries ('{RetriesHeader}'), " +
                 $"so it was attempted {MaxRetries + 1} times");
         });
     }
 
-    private static bool IsFor(RabbitMqRawDelivery delivery, Guid sessionId)
+    private static int? ReadRetries(ProtoMessage delivery)
     {
-        try
-        {
-            return JsonSerializer.Deserialize<SessionEnded>(delivery.Body.Span, Json)?.SessionId == sessionId;
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
-    }
-
-    private static int? ReadRetries(IReadOnlyBasicProperties properties)
-    {
-        if (properties.Headers is null || !properties.Headers.TryGetValue(RetriesHeader, out var value))
+        if (delivery.Headers is null
+            || !delivery.Headers.TryGetValue(RetriesHeader, out var value)
+            || value is null)
         {
             return null;
         }
 
-        return value switch
-        {
-            int number => number,
-            long number => (int)number,
-            byte[] bytes when int.TryParse(Encoding.UTF8.GetString(bytes), out var parsed) => parsed,
-            _ => null
-        };
+        return int.TryParse(value, out var parsed) ? parsed : null;
     }
 }

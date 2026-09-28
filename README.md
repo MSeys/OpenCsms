@@ -15,10 +15,10 @@ The point is the *one suite, many environments* promise, without `if` statements
 
 | Mode | API | PostgreSQL & RabbitMQ | State |
 | --- | --- | --- | --- |
-| In-process + Testcontainers | hosted by the suite (`UseInProcess`) | started by the suite (Testcontainers) | verified: 73/73 green, 0 skipped, fresh containers, seven Chromium journeys included (`artifacts/gates/opencsms-container-20260927-230357.log`) |
+| In-process + Testcontainers | hosted by the suite (`UseInProcess`) | started by the suite (Testcontainers) | verified: 74/74 green, 0 skipped, fresh containers, seven Chromium journeys included (`artifacts/gates/opencsms-container-20260928-091846.log`) |
 | Configured | hosted by the suite | an environment you provide through configuration; the suite's containers skip | verified: 64/64, 0 skipped, one persistent database (`artifacts/gates/opencsms-configured-20260927-195250.log`); measured before the outbox and machine-credential stages |
-| Published, locally rehearsed | a real API process at `ProtoTest:Applications:Csms:BaseUrl`; the real `OpenCsms.Billing.Worker` process consumes | running `opencsms-postgres` / `opencsms-rabbitmq` containers addressed by the configured keys | verified: 64 total - 57 passed, 7 clock-dependent journeys skipped, the worker runs once (`artifacts/gates/opencsms-published-20260927-195118.log`), measured before the outbox and machine-credential stages (in-process-gated); no staging target exists yet |
-| Container topology (planned) | a container | containers, `docker compose` / Aspire | M4 |
+| Published, locally rehearsed (`-Mode published`) | a real API process at `ProtoTest:Applications:Csms:BaseUrl`; the real `OpenCsms.Billing.Worker` consumes and the real `OpenCsms.Notification.Worker` idles without targets | running `opencsms-postgres` / `opencsms-rabbitmq` containers addressed by the configured keys | verified: 74 total - 61 passed, 13 clock- and in-process-gated journeys skipped, each worker process runs once (`artifacts/gates/opencsms-published-20260928-085449.log`); no staging target exists yet |
+| Container topology (`-Mode topology`) | the AppHost's API project resource at its published address (it also serves the dashboard) | the AppHost's PostgreSQL and RabbitMQ containers | verified: 74 total - 61 passed, 13 clock/in-process journeys skipped (`artifacts/gates/opencsms-topology-20260928-092028.log`) |
 
 The suite's `Setup` is the same code in every mode: each target - the store, the broker, the API
 with its billing worker, the dashboard application - declares its providers in order, and the first
@@ -26,6 +26,19 @@ one the environment makes available serves it. Infrastructure the environment al
 not started, and a worker follows its application: hosted with the in-process server, run by the
 environment otherwise. The product resolves its broker address on first publish and its database
 string when the context is first resolved, so settings that arrive after registration are seen.
+
+The topology leg is `src/OpenCsms.AppHost`: an Aspire AppHost that declares PostgreSQL, RabbitMQ,
+the API project (which also serves the dashboard) and both workers as project resources, and injects
+the store and broker under the product's own keys. It targets net8.0 - the suite's target framework -
+because the Aspire testing host runs the AppHost's entry point inside the test process, and DCP
+launches the project resources with `dotnet run`, which cannot choose a target framework; every
+OpenCSMS project is net8.0. `eng/run-suite.ps1 -Mode topology` sets the integration's one selection
+key, `ProtoTest__Aspire__Enabled=true`, so the same `Setup` chains resolve through the AppHost and
+the environment runs the workers. The AppHost serves only while selected: a run that sets no
+selection key never starts it - the container leg's own Testcontainers are the only infrastructure -
+and a run that configures every key the AppHost fills steps it aside entirely. A run that exports
+the store or broker keys keeps them: the graph declares a resource only for a key the run leaves
+unset and injects the provided value instead.
 
 ## Status
 
@@ -49,12 +62,15 @@ connector invoices its own energy only (R2.3). The notification worker closes th
 component: an issued invoice and a billing failure each reach their configured external HTTP target
 through the fakes the suite hosts, and a target that stays down is retried and dead-lettered rather
 than dropped. The suite is green
-(`dotnet test tests/OpenCsms.Suite` → 73/73, domain 52/52): the default mode with fresh
+(`dotnet test tests/OpenCsms.Suite` → 74/74, domain 52/52): the default mode with fresh
 Testcontainers and the seven Chromium journeys is recorded at
-`artifacts/gates/opencsms-container-20260927-230357.log`, the configured mode against one
+`artifacts/gates/opencsms-container-20260928-091846.log`, the configured mode against one
 persistent database at `artifacts/gates/opencsms-configured-20260927-195250.log` (its seed was
-already in place, which is the seeder's idempotency proof), and the published rehearsal at
-`artifacts/gates/opencsms-published-20260927-195118.log` — the Setup is the same code in every
+already in place, which is the seeder's idempotency proof), the published rehearsal at
+`artifacts/gates/opencsms-published-20260928-085449.log` (61 passed, the same 13 gated journeys
+skipped, both worker processes run once), and the AppHost topology at
+`artifacts/gates/opencsms-topology-20260928-092028.log` (61 passed, the 13 clock- and in-process-
+gated journeys skipped) — the Setup is the same code in every
 mode. The milestones below are the ones in the
 [reference demo brief](https://github.com/MSeys/ProtoTest) — this README tracks them honestly.
 
@@ -70,6 +86,7 @@ on the side.
 | `src/OpenCsms.Infrastructure` | The EF `DbContext` with its fluent configurations, migrations and stores, and the RabbitMQ publisher and topology. |
 | `src/OpenCsms.Protocol.Ocpp` | The OCPP 1.6J wire format, translated to application commands. |
 | `src/OpenCsms.Api`, `src/OpenCsms.Billing.Worker`, `src/OpenCsms.Notification.Worker` | Thin composition roots: they bind requests and deliveries and map answers, status codes and DTOs. |
+| `src/OpenCsms.AppHost` | The Aspire topology: the containers and project resources the topology mode starts, with the store and broker injected under the product's keys; no product code. |
 
 The sub-stages landed in order, each gated and behavior-preserving: **R3.0a** extracted the
 application layer (`d23ec58`), **R3.0b** merged persistence and messaging into infrastructure
@@ -263,24 +280,44 @@ audit's fixes (R1a) landed before new feature work.
   broker accepts it, and the worker's idempotency keeps exactly one invoice per session. The
   publish-failure paths are pinned by `OutboxTests`: one failed attempt, and a two-failure outage the
   store's bounded backoff rides out, both still billing exactly once.
-- **Every test connects to the broker at setup.** The run-wide `Tap(CsmsEvents.Exchange)` pre-bind
-  makes the suite's tap prepare its destination during test setup, including the REST-only contract
-  tests, so a run without a broker fails setup there rather than skipping; the broker capability is
-  what gates the tests that need it, and the pre-bind is suite-wide by design (R1a-13). Recorded in
-  [COVERAGE.md](COVERAGE.md).
-- The DLQ assertion uses a raw RabbitMQ client (`tests/OpenCsms.Suite/Support/RabbitMqRawClient.cs`):
-  ProtoTest's tap binds destinations as exchanges and `ProtoMessage` drops the routing key, so a queue
-  cannot be awaited through it. The `(exchange, routingKey)` addition is recorded in plan-5 (REF-5) for
-  a future release; the helper carries the assertion until then.
+- **Every test connects to the broker at setup.** The run-wide
+  `Tap(CsmsEvents.Exchange, CsmsEvents.DeadLetterExchange, CsmsEvents.NotificationsDeadLetterExchange)`
+  pre-bind makes the suite's tap prepare its destinations during test setup, including the REST-only
+  contract tests, so a run without a broker fails setup there rather than skipping; the broker
+  capability is what gates the tests that need it, and the pre-bind is suite-wide by design (R1a-13).
+  Recorded in [COVERAGE.md](COVERAGE.md).
+- **The DLQ assertions await the dead-letter exchanges.** ProtoTest's messaging surface publishes and
+  awaits by `(exchange, routingKey)` (`PublishAsync(exchange, routingKey, payload)`,
+  `AwaitAsync(exchange, routingKey, predicate, …)`) and carries the routing key on consumed messages;
+  a tap binds a test-owned queue to the awaited exchange. The product's dead-letter queues hang off the
+  fanout exchanges it declares (`csms.events.dlx`, `notifications.dlx`), so the journeys publish the
+  poison with the product's routing key and await the dead-letter exchange, whose own binding carries
+  the same delivery into the queue. Consuming a queue directly remains a framework gap - a queue is not
+  addressable through the tap model - so an assertion that needs the queue's own consumer state would
+  need a raw client.
 - **A browser download is named binary content.** `WebDownload` implements `IProtoBinaryContent`
   (fixed in the framework during M2), so the invoices screen's download journey opens the captured
   export in one line.
-- Container topology is planned (M4.5) and payments are not built: the notification worker pushes
-  invoice-ready and billing-failure notifications to configurable HTTP targets (the suite's WireMock
-  fakes), but there is no real PSP payment flow, and a target that stays down is dead-lettered rather
-  than replayed (`NotificationTargetOutagesAreDeadLettered` pins it). Published mode is rehearsed
-  locally (the mode table above) but has no staging target yet; the rest of OCPP beyond the named
-  refusals has no tests yet — [COVERAGE.md](COVERAGE.md) lists the untested surface.
+- **Container topology is verified.** `eng/run-suite.ps1 -Mode topology` selects `OpenCsms.AppHost`
+  (it starts only while selected), which runs the API project (serving the dashboard too), the
+  billing worker and the notification worker as real processes beside fresh PostgreSQL and RabbitMQ
+  containers: 74 total - 61 passed, 13 clock- and in-process-gated journeys skipped
+  (`artifacts/gates/opencsms-topology-20260928-092028.log`). The AppHost's notification worker is
+  wired to the product's own target keys, which the suite leaves unset there, so it idles with the
+  product's log line; the notification journeys themselves assert the injected run clock and an
+  in-process application, which real processes do not have, so they stay skipped rather than being
+  pointed at the suite's lazily-started WireMock fakes. Payments are not built: the notification
+  worker pushes invoice-ready and billing-failure notifications to configurable HTTP targets (the
+  suite's WireMock fakes), but there is no real PSP payment flow, and a target that stays down is
+  dead-lettered rather than replayed (`NotificationTargetOutagesAreDeadLettered` pins it). Published
+  mode is a self-contained local rehearsal (`-Mode published`, the mode table above) and has no
+  staging target yet; the rest of OCPP beyond the named refusals has no tests yet —
+  [COVERAGE.md](COVERAGE.md) lists the untested surface.
+- **The Aspire and WireMock packages disagree about Humanizer.** The Aspire testing host resolves
+  `Humanizer.Core` 3.0.10 while WireMock's Handlebars helpers still ask for the 2.14.1 satellite set,
+  so a suite composing both fails restore with `NU1608` as an error (the suite builds with
+  `TreatWarningsAsErrors`); the suite pins `Humanizer` 3.0.10 to move every satellite to the version
+  the Aspire graph already resolved.
 - **The dashboard's views are done through R3.4.** The timeline, invoice lines, tariff repricing,
   the export with its Sheets assertions, the viewer journey and the multi-tenancy negative test
   are in; the invoices screen's download button is clicked in Chromium with the downloaded bytes
@@ -321,34 +358,52 @@ dotnet test
 The first key is the product's database, the second the product's broker, and the third the address
 ProtoTest's own messaging tap uses.
 
-Each mode has a recorded run: `pwsh eng/run-suite.ps1 -Mode container` and
-`pwsh eng/run-suite.ps1 -Mode configured` (the latter requires the three keys above) stream the run to
-the console and tee it to `artifacts/gates/opencsms-<mode>-<timestamp>.log`. Both modes build the
-dashboard first (`eng/build-dashboard.ps1`: `npm ci` + `npm run build`), so the browser journeys
-always test a fresh bundle; run it alone to build without running the suite.
+Each mode has a recorded run: `pwsh eng/run-suite.ps1 -Mode container`,
+`pwsh eng/run-suite.ps1 -Mode configured` (the latter requires the three keys above),
+`pwsh eng/run-suite.ps1 -Mode published` (which starts the rehearsal stack itself, below) and
+`pwsh eng/run-suite.ps1 -Mode topology` (which clears the published-mode keys and sets
+`ProtoTest__Aspire__Enabled=true`, so the AppHost starts and its resources serve the store, the
+broker, the API and the dashboard) stream the run to the console and tee it to
+`artifacts/gates/opencsms-<mode>-<timestamp>.log`. All modes build the dashboard first
+(`eng/build-dashboard.ps1`: `npm ci` + `npm run build`), so the browser journeys always test a fresh
+bundle; run it alone to build without running the suite.
 
-A published rehearsal points the same suite at a running stack: start the API, the Billing worker and
-the Notification worker as real processes (`dotnet
-src/OpenCsms.Api/bin/Release/net8.0/OpenCsms.Api.dll --urls
-http://127.0.0.1:5080 --contentRoot src/OpenCsms.Api`, `dotnet
-src/OpenCsms.Billing.Worker/bin/Release/net8.0/OpenCsms.Billing.Worker.dll` and `dotnet
-src/OpenCsms.Notification.Worker/bin/Release/net8.0/OpenCsms.Notification.Worker.dll`; the
-notification worker stays idle unless `Notifications__InvoiceReadyBaseUrl` and
-`Notifications__BillingFailureBaseUrl` name real targets), export the five keys —
+`pwsh eng/run-suite.ps1 -Mode published` is the local rehearsal and is self-contained beyond the
+persistent containers: against the running `opencsms-postgres` / `opencsms-rabbitmq` stack it builds
+the product, starts the API and both workers as real processes (`dotnet
+src/OpenCsms.Api/bin/Release/net8.0/OpenCsms.Api.dll --urls http://127.0.0.1:5080 --contentRoot
+<repository>/src/OpenCsms.Api`, `OpenCsms.Billing.Worker.dll` and
+`OpenCsms.Notification.Worker.dll`), waits for `/healthz`, exports the five keys —
 `ConnectionStrings__Csms`, `Messaging__RabbitMq__ConnectionString`,
 `ProtoTest__Messaging__RabbitMq__ConnectionString`, `ProtoTest__Applications__Csms__BaseUrl` and
-`ProtoTest__Applications__Dashboard__BaseUrl` — and run `dotnet test tests/OpenCsms.Suite -c Release`.
-The suite's provider chains step aside, the environment runs its own workers and clock, and the
-clock-dependent journeys skip; the recorded run is under
-`artifacts/gates/opencsms-published-<timestamp>.log`.
+`ProtoTest__Applications__Dashboard__BaseUrl` — runs `dotnet test tests/OpenCsms.Suite -c Release
+--no-build`, and stops the processes again. It clears mode keys a shell may carry first, so reruns
+measure the same stack. The notification worker stays idle without target keys (its `is idle` line
+is captured beside the suite log) because the suite's fakes live inside the test process; nothing
+leaves the machine. Start the persistent stack once with:
 
-`docker compose up` (M4) starts the whole topology for manual use.
+```bash
+docker run -d --name opencsms-postgres -e POSTGRES_USER=opencsms -e POSTGRES_PASSWORD=opencsms -e POSTGRES_DB=opencsms -p 5432:5432 postgres:16-alpine
+docker run -d --name opencsms-rabbitmq -p 5672:5672 rabbitmq:3-alpine
+```
+
+To point the same suite at a stack someone else runs, export those five keys and run `dotnet test`
+yourself: the suite's provider chains step aside, the environment runs the workers and its clock,
+and the clock-dependent journeys skip. The recorded run is under
+`artifacts/gates/opencsms-published-<timestamp>.log`, with each process's output in
+`opencsms-published-<timestamp>-<name>.log` beside it.
+
+A compose file for the deployment-shaped rehearsal is not built yet; the published leg runs the
+product's own processes against the two containers, and the topology leg starts the same resources
+through the AppHost instead.
 
 ## Packages
 
 This repository consumes ProtoTest packages. While 1.1 is under development it resolves them from a
 local feed produced by `eng/pack.ps1` in a sibling ProtoTest checkout (see `NuGet.config`); once 1.1 is
-published it resolves them from nuget.org.
+published it resolves them from nuget.org. [COVERAGE.md](COVERAGE.md#prototest-integration-matrix)
+records which of them the suite exercises and the reason recorded for each one the product's shape
+does not justify.
 
 ## License
 

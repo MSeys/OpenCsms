@@ -6,6 +6,7 @@ using OpenCsms.Contracts;
 using OpenCsms.Suite.Support;
 using ProtoTest.Core;
 using ProtoTest.Http;
+using ProtoTest.Json;
 using ProtoTest.Messaging;
 using ProtoTest.NUnit;
 using ProtoTest.Rest;
@@ -61,10 +62,10 @@ public sealed class RedeliveryTests
             started.StartedAtUtc,
             ended.EndedAtUtc!.Value,
             ended.EnergyKwh);
-        await using (var broker = await RabbitMqRawClient.ConnectAsync(Proto.Context))
-        {
-            await broker.PublishAsync(CsmsEvents.Exchange, CsmsEvents.SessionEndedRoutingKey, redelivery);
-        }
+        await Proto.Context.Messaging().PublishAsync(
+            CsmsEvents.Exchange,
+            CsmsEvents.SessionEndedRoutingKey,
+            JsonSerializer.Serialize(redelivery, ProtoJsonDefaults.Web));
 
         // Assert: the redelivery republishes the stored invoice and stores nothing new.
         var secondIssued = await AwaitInvoiceIssuedAsync(started.Id);

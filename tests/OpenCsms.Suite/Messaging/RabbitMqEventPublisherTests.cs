@@ -3,9 +3,9 @@ namespace OpenCsms.Suite.Messaging;
 using Microsoft.Extensions.Configuration;
 using OpenCsms.Contracts;
 using OpenCsms.Infrastructure.Messaging;
-using OpenCsms.Suite.Support;
 using ProtoTest.Core;
 using ProtoTest.Messaging;
+using ProtoTest.Messaging.RabbitMq;
 using ProtoTest.NUnit;
 using RabbitMQ.Client;
 
@@ -28,7 +28,7 @@ public sealed class RabbitMqEventPublisherTests
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Messaging:RabbitMq:ConnectionString"] = RabbitMqRawClient.ResolveConnectionString(Proto.Context)
+                ["Messaging:RabbitMq:ConnectionString"] = Proto.Context.Service<RabbitMqOptions>().ConnectionString
             })
             .Build();
         var connections = new List<IConnection>();

@@ -7,6 +7,7 @@ using OpenCsms.Infrastructure.Notifications;
 using OpenCsms.Suite.Support;
 using ProtoTest.Core;
 using ProtoTest.Http;
+using ProtoTest.Json;
 using ProtoTest.Messaging;
 using ProtoTest.NUnit;
 using ProtoTest.Rest;
@@ -95,10 +96,10 @@ public sealed class InvoiceNotificationsReachTheExternalTarget
             SuiteClock.Instant.AddMinutes(-5),
             SuiteClock.Instant,
             EnergyKwh: 1.5m);
-        await using (var broker = await RabbitMqRawClient.ConnectAsync(Proto.Context))
-        {
-            await broker.PublishAsync(CsmsEvents.Exchange, CsmsEvents.SessionEndedRoutingKey, ended);
-        }
+        await Proto.Context.Messaging().PublishAsync(
+            CsmsEvents.Exchange,
+            CsmsEvents.SessionEndedRoutingKey,
+            JsonSerializer.Serialize(ended, ProtoJsonDefaults.Web));
 
         // Assert: the failure reached the alerting target, at this session's path, with the reason
         // the billing worker recorded.

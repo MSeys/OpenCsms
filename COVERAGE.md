@@ -20,7 +20,7 @@ the same commit as the behavior it describes.
 | `tests/OpenCsms.Suite/Api/MachineApiCredentials.cs` | The machine surface's credential contracts (M4.3): the management routes answer 401 without a key and with a key no tenant owns, so the refusals prove the credential rather than a broken route — the same route with the tenant's valid key answers 201, and a signed-in dashboard cookie does not unlock it. A key reaches exactly the tenant it was issued for: another tenant's station and connectors answer 404 like unknown ids, a session start on the foreign station is refused before the station is touched, and the neighbor's key can neither read nor end the test's session, which stays open, while the neighbor's own key does reach its station. The tenant and its one-time key come from `POST /api/tenants`, the product's own registration route. |
 | `tests/OpenCsms.Suite/Journeys/InvoiceNotificationsReachTheExternalTarget.cs` | The notification path (M4.3b), against `ProtoTest.WireMock` fakes standing in for the external targets. Journey one: the billing worker issues an invoice, the notification worker consumes `invoice.issued` and POSTs it to the invoice-ready fake; the request the fake served has the invoice's own path (`/notifications/invoice-ready/{invoiceId}`, matched, answered 202) and its logged body carries the invoice's data — the event discriminator, invoice id, session id, tenant, total, currency and the run clock's instant. Journey two: a `session.ended` naming a session the store does not know is retried and dead-lettered by the billing worker, which publishes `billing.failed`; the notification worker pushes the failure to the alerting fake at the session's path with the recorded reason and the run clock's instant, and the fake accepts it. |
 | `tests/OpenCsms.Suite/Journeys/NotificationTargetOutagesAreDeadLettered.cs` | The notification path under a target that stays down (M4.4): the per-run fake answers 503 for one entity's notifications only - the rejection is keyed to the body's session id, so the parallel notification journeys keep their accepting catch-all - and the consumer spends its three in-process retries before the delivery is dead-lettered. The dead letter carries the invoice's or session's own ids and the `x-opencsms-retries: 3` header, the target saw all four failed attempts, the stored invoice stays exactly one with the failed notification never touching it, and a billing failure whose alerting target is down lands on its notification dead-letter queue the same way. Needs the broker and both workers. |
-| `tests/OpenCsms.Suite/Journeys/MonthlyInvoiceExport.cs` | The monthly export journey (R3.2), asserted with `ProtoTest.Sheets` on the real cells: the `Invoices` sheet carries the header plus one row per seeded invoice, the header uses the invoice API's own names (`IssuedAtUtc`, `StartFeeAmount`, `IdleFeeAmount`), the typed model matches every rule, every row falls in 2030-05, every exported row carries its stored row's own numbers (a swapped column fails the per-row check, not just the sum), and the summed total equals the dashboard invoice rows' sum for the same tenant and month, with identical row identity. A month with no invoices still carries the header with zero totals; malformed and missing months are 400; anonymous reads are 401; and the two tenants' exports share no invoice id. |
+| `tests/OpenCsms.Suite/Journeys/MonthlyInvoiceExport.cs` | The monthly export journey (R3.2), asserted with `ProtoTest.Sheets` on the real cells: the `Invoices` sheet carries the header plus one row per seeded invoice, the header uses the invoice API's own names (`IssuedAtUtc`, `StartFeeAmount`, `IdleFeeAmount`), the typed model matches every rule, every row falls in 2030-05, every exported row carries its stored row's own numbers (a swapped column fails the per-row check, not just the sum), and the summed total equals the dashboard invoice rows' sum for the same tenant and month, with identical row identity. The `Summary` sheet is read as a key-value model whose labels are declared with `[Label]`. A month with no invoices still carries the header with zero totals; malformed and missing months are 400; anonymous reads are 401; and the two tenants' exports share no invoice id. |
 | `tests/OpenCsms.Domain.Tests/TariffPricingTests.cs` | The repricing domain rules (R3.2): all four prices are replaced together, identity/tenant/name/currency never change, and a refused update changes nothing. |
 | `tests/OpenCsms.Suite/Web/OperatorDashboardJourney.cs` | The R3.1 browser journey: Chromium signs in on the dashboard's own `/sign-in` screen with the account `CsmsOperatorAttribute` provisioned, the stations list shows the one station this test's tenant owns (name, OCPP identity, connector count) and its detail screen shows the empty session list. The session declares `DiscoverRoutes`, so the report's page inventory comes from the live Vue Router (`/sign-in`, `/`, `/stations/{id}`, `/invoices`, `/invoices/{id}`, `/tariffs`, `/status`). |
 | `tests/OpenCsms.Suite/Web/DashboardDepthJourney.cs` | The R3.2 depth journey: a real billed session (22 kWh, 10.30 EUR) drives the station timeline — connector, energy, ended state and the invoice link — and the invoice screen shows the worker's calculation lines (8.80/1.50/0.00/10.30). The operator reprices the tariff through the dashboard form (the table shows €0.55 afterwards) and the remote start against the unconnected charge point refuses honestly on the screen. |
@@ -29,7 +29,7 @@ the same commit as the behavior it describes.
 | `tests/OpenCsms.Suite/Web/ViewerRestrictionJourney.cs` | The R3.2 viewer journey: the viewer provisioned by `CsmsViewerAttribute` signs in through the sign-in screen, reads stations, the station detail, tariffs and invoices — and the operator actions are not rendered (no remote-start panel, no per-session stop button on the open session row, no tariff edit buttons, the read-only note instead). The API behind them already answers 403. |
 | `tests/OpenCsms.Suite/Web/TenantIsolationJourney.cs` | The R3.2 browser isolation journey: the stations list shows only the signed-in tenant's station (the neighbor's row is absent) and opening the neighbor's station answers the not-found panel. |
 | `tests/OpenCsms.Suite/Web/PublicStatusJourney.cs` | The R3.1 public journey: with no sign-in and no cookie, the browser opens `/status` and finds the provisioned station's card (name, OCPP identity, the honest "no connector status reported yet" state); the shell offers sign-in and shows no session facts, which is what "public" means here. |
-| `tests/OpenCsms.Suite/Billing/DeadLetterTests.cs` | The worker's negative path, through the raw broker: a `session.ended` for an unknown session (published on the product exchange with the product routing key) is retried three times and dead-lettered; the test consumes `billing.session-ended.dlq` within a bounded wait and asserts the payload session id and the `x-opencsms-retries: 3` header (completed retries; the fourth attempt was dead-lettered). Needs worker and broker, no REST. |
+| `tests/OpenCsms.Suite/Billing/DeadLetterTests.cs` | The worker's negative path, through the messaging surface: a `session.ended` for an unknown session (published on the product exchange with the product routing key) is retried three times and dead-lettered; the test awaits the product's dead-letter exchange (`csms.events.dlx`) within a bounded wait, where the product's own binding carries the same delivery into `billing.session-ended.dlq`, and asserts the payload session id, the preserved routing key and the `x-opencsms-retries: 3` header (completed retries; the fourth attempt was dead-lettered). Needs worker and broker, no REST. |
 | `tests/OpenCsms.Suite/Billing/RedeliveryTests.cs` | The worker's republish-on-redelivery path (R1a-01): after the journey's setup created the invoice, the product's own `session.ended` payload is published a second time on the product exchange and routing key; `invoice.issued` must arrive again with the same invoice id, and the store must still hold exactly one invoice row for the session (counted through the product's own data registration). Needs worker and broker. |
 | `tests/OpenCsms.Suite/Billing/OutboxTests.cs` | The session-end outbox under a publish failure (M4.2/M4.4): the substituted publisher fails the request's own attempt, the end still commits and its event stays pending in the store; the dispatcher retries the row, the retry travels the real broker, the worker bills once, and the row is marked sent. The second test rides out a two-failure outage: the substituted publisher fails this session's first two attempts - the request's own and the first backed-off retry, driven through the store's own dispatch while the event's unit of work is still open - the store records both failed attempts and schedules the longer second backoff, and the delivered row is marked sent with exactly one invoice. Needs the broker and the worker. |
 | `tests/OpenCsms.Suite/Messaging/RabbitMqEventPublisherTests.cs` | The publisher's recovery (R1a-03): a channel whose connection was closed out from under the publisher is not reused; the next publish opens a new connection and reaches the exchange. Needs the broker only. |
@@ -57,22 +57,30 @@ idle-fee/register journeys, the duplicate-stop `EndedAtUtc` assertion, the REST-
 and the browser download journey - so they run where the suite's clock reaches the system under test
 and report as skipped against a running stack; the remote-timeout journey reads the API's effective
 `Ocpp:RemoteCallTimeoutSeconds` instead of assuming the in-process two seconds. The default mode is
-verified with fresh Testcontainers including the seven Chromium journeys (73/73,
-`artifacts/gates/opencsms-container-20260927-230357.log`; the notification journeys run there too),
-configured mode against one persistent
+verified with fresh Testcontainers including the seven Chromium journeys (74/74,
+`artifacts/gates/opencsms-container-20260928-091846.log`; the notification journeys run there too;
+re-recorded after the AppHost selection change), configured mode against one persistent
 docker-run PostgreSQL and RabbitMQ (64/64, `artifacts/gates/opencsms-configured-20260927-195250.log`;
 the seed was already in place, which is the idempotency proof; measured before the outbox,
 machine-credential and notification stages), and published mode by the local rehearsal described in
 the README
-(`artifacts/gates/opencsms-published-20260927-195118.log`: 57 passed, 7 clock journeys skipped,
-the worker runs once; measured before the outbox, machine-credential and notification stages, which
-are in-process-gated). The switch itself is rehearsed too: a fresh-container run with
+(`artifacts/gates/opencsms-published-20260928-085449.log`: 61 passed, 13 skipped - the same seven
+clock journeys plus the six in-process-gated ones, the two outbox substitutions and the four
+notification journeys; the API and the billing worker run as real processes, the notification
+worker process idles without target keys). The switch itself is rehearsed too: a fresh-container run with
 `ProtoTest__Seed=off` reports the six seeded journeys skipped and stores no seed
 (`artifacts/gates/opencsms-container-20260927-195618.log`: 58 passed, 6 skipped; measured before
-the outbox, machine-credential and notification stages).
+the outbox, machine-credential and notification stages). Topology mode is verified through the
+AppHost (`artifacts/gates/opencsms-topology-20260928-092028.log`: 61 passed, 13 skipped): the run
+sets `ProtoTest__Aspire__Enabled`, the integration's selection key, so the AppHost serves; with the
+key unset - the container leg - the AppHost target resolves to its unselected fallback and never
+starts. The AppHost's project resources run the API and both workers and its containers serve
+PostgreSQL and RabbitMQ, so the same seven clock journeys plus the six in-process-gated ones (the
+two outbox substitutions and the four notification journeys) skip.
 Its output is recorded under
 `artifacts/gates/opencsms-<mode>-<timestamp>.log` by `eng/run-suite.ps1`, which builds the dashboard
-first so the browser tests always run a fresh bundle.
+first so the browser tests always run a fresh bundle; in published mode it also starts and stops the
+API and both worker processes and captures their output beside the suite log.
 
 The schema migration from M1 to M2 was verified on a database that already held stations and sessions:
 the new `ChargePointId` column is added nullable, backfilled from each station's own id (no duplicate
@@ -101,9 +109,10 @@ Every run writes its evidence under `TestResults/OpenCsms/` beside the built tes
   remote-stop button drives a connected charge point from the station screen (through the
   dashboard application's own device client, over a real socket to the loopback listener).
 - **Monthly `.xlsx` export** — M3, R3.2: done (above).
-- **Published/deployed mode** — rehearsed locally against running containers and real API/worker
-  processes (the README's mode table and the evidence above); no staging target exists yet, so a
-  staging smoke waits for one.
+- **Published/deployed mode** — rehearsed locally by `eng/run-suite.ps1 -Mode published`, which
+  starts the API and both worker processes against the running containers, waits for `/healthz`,
+  runs the suite and stops them again (the README's mode table and the evidence above); no staging
+  target exists yet, so a staging smoke waits for one.
 - **Multi-tenancy negative** — R3.2: `TenantIsolation` pins the dashboard reads and the
   remote-stop command in both directions (plus seeded-tenant against seeded-tenant), and
   `TenantIsolationJourney` pins the stations list and the foreign station screen in the browser.
@@ -136,3 +145,62 @@ Every run writes its evidence under `TestResults/OpenCsms/` beside the built tes
   including for the REST-only contract tests; a broker-less run therefore fails setup there rather
   than skipping. The broker capability gates the tests that need it; the pre-bind is suite-wide by
   design (R1a-13).
+- **Topology mode's notification journeys skip, and its notification worker idles.** The AppHost
+  runs the notification worker as a real process, but the suite leaves its target keys unset (a
+  test-session fake would turn every topology notification into a retry/dead-letter) and the two
+  notification journey classes assert the injected run clock, so they carry `[RequiresInProcess]` and
+  `[RequiresTestClock]` and skip under `-Mode topology`; the topology leg proves the billing path end
+  to end and leaves the notification path to the in-process and container legs.
+- **The workers build under DI validation.** A host that composes the application without the OCPP
+  edge resolves a transport-less `IChargePointConnections` default (the API replaces it with the
+  registry its gateway fills), so the billing and notification workers start in an environment that
+  validates the service graph - the AppHost runs them in Development, where the published rehearsal's
+  `dotnet <worker>.dll` did not.
+
+## ProtoTest integration matrix
+
+The suite's project file references 17 ProtoTest packages directly; the rest arrive through those
+references. The table records what each package in the family does here and the reason recorded for
+every one the product's shape does not justify - the reference-suite contract is that an integration
+is exercised where the product calls for it, and an absence is a recorded reason, never a silent gap.
+
+| Package | Reference | Exercised as, or recorded reason |
+| --- | --- | --- |
+| `ProtoTest.Core` | transitive | The host builder, `ProtoContext`, attributes, clock, tracing and readiness every test runs on. |
+| `ProtoTest.Testcontainers` | transitive | The container plumbing beneath the PostgreSQL and RabbitMQ providers; the suite reaches it through `Sql.Testcontainers` and `Messaging.RabbitMq.Testcontainers`, not directly. |
+| `ProtoTest.Http` | transitive | REST and response assertions and the API-key authenticator (`ProtoTest.Http.Authenticators`). |
+| `ProtoTest.Json` | transitive | `ProtoJsonDefaults.Web` and payload reads on awaited deliveries. |
+| `ProtoTest.Data` | direct | The tenant, tariff, station and user provisioners over the product's own routes. |
+| `ProtoTest.NUnit` | direct | The runner: `ProtoTestAssembly`, skip conditions and the attribute surface. |
+| `ProtoTest.MSTest` | not referenced | One runner; the suite is the NUnit one. |
+| `ProtoTest.TUnit` | not referenced | One runner; the suite is the NUnit one. |
+| `ProtoTest.Xunit` | not referenced | One runner; the suite is the NUnit one. |
+| `ProtoTest.Xunit3` | not referenced | One runner; the suite is the NUnit one. |
+| `ProtoTest.Rest` | direct | Named REST clients and the route-coverage collector. |
+| `ProtoTest.Sql` | not referenced | No ProtoTest SQL surface is registered: rows go through the product's own EF context and the REST front door. |
+| `ProtoTest.Sql.EntityFrameworkCore` | not referenced | Same: the product owns its EF Core stack; a second one would not be the product's path. |
+| `ProtoTest.Sql.Testcontainers` | direct | The PostgreSQL container in the default mode. |
+| `ProtoTest.GraphQL` | not referenced | The product speaks REST, OCPP and AMQP; there is no GraphQL surface. |
+| `ProtoTest.Grpc` | not referenced | Same: no gRPC surface. |
+| `ProtoTest.Messaging` | transitive | Taps, publish/await by routing key and the dead-letter assertions. |
+| `ProtoTest.Messaging.RabbitMq` | direct | The broker transport behind the tap and the product-bound publishes. |
+| `ProtoTest.Messaging.RabbitMq.Testcontainers` | direct | The RabbitMQ container in the default mode. |
+| `ProtoTest.Messaging.MassTransit` | not referenced | The product's broker is a raw RabbitMQ publisher and consumer with its own retry and dead-letter topology; nothing speaks MassTransit. |
+| `ProtoTest.Sheets` | direct | `.xlsx` cells on the monthly export, including the browser download. |
+| `ProtoTest.AspNetCore` | direct | The in-process server and the loopback dashboard application. |
+| `ProtoTest.Devices` | direct | The charge-point device model and its journey operations. |
+| `ProtoTest.Devices.WebSocket` | direct | The OCPP 1.6J client the charge points speak. |
+| `ProtoTest.Devices.WebSocket.AspNetCore` | direct | The `TestServer` transport for the in-process gateway. |
+| `ProtoTest.Hosting` | direct | The in-process worker hosts for the billing and notification workers. |
+| `ProtoTest.Aspire` | direct | The AppHost topology leg (`-Mode topology`). |
+| `ProtoTest.OpenApi` | not referenced | The product serves Swagger, but the suite asserts behavior through calls, not the document; no OpenApi source or collector is registered. |
+| `ProtoTest.Reporting` | direct | The JSON and HTML report sinks. |
+| `ProtoTest.Traces` | not referenced | Tooling (the trace viewer); the suite writes its `.prototrace` through the tracing configuration. |
+| `ProtoTest.Web.Pages` | transitive | The page model behind the web sessions. |
+| `ProtoTest.Web` | direct | Browser sessions and the dashboard journeys. |
+| `ProtoTest.Web.Playwright` | direct | The Chromium backend the browser journeys run on. |
+| `ProtoTest.Web.Selenium` | not referenced | One browser backend: Playwright serves the journeys; Selenium would duplicate it. |
+| `ProtoTest.WireMock` | direct | The per-run fakes for the external notification targets. |
+| `ProtoTest.Templates` | not referenced | Tooling (`dotnet new` templates); not a suite integration. |
+| `ProtoTest.Cli` | not referenced | Tooling (the `prototest` commandline); not a suite integration. |
+| `ProtoTest.Analyzers` | not referenced | Tooling (the build-time analyzers); not a suite integration. |

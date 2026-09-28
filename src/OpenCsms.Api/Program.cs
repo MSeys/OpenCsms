@@ -1,6 +1,7 @@
 namespace OpenCsms.Api;
 
 using System.Security.Claims;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using OpenCsms.Api.Ocpp;
 using OpenCsms.Application;
 using OpenCsms.Application.Billing;
@@ -44,9 +45,11 @@ public sealed class Program
         // the same Ocpp section the gateway reads.
         builder.Services.Configure<RemoteCommandOptions>(builder.Configuration.GetSection(OcppGatewayOptions.SectionName));
         // The connection registry is the transport's; the application sees it through its own port.
+        // This host replaces the transport-less default the infrastructure registers with the
+        // registry its own gateway fills while sockets live.
         builder.Services.AddSingleton<ChargePointConnections>();
-        builder.Services.AddSingleton<IChargePointConnections>(provider =>
-            provider.GetRequiredService<ChargePointConnections>());
+        builder.Services.Replace(ServiceDescriptor.Singleton<IChargePointConnections>(provider =>
+            provider.GetRequiredService<ChargePointConnections>()));
         builder.Services.AddSingleton<OcppGateway>();
 
         var app = builder.Build();

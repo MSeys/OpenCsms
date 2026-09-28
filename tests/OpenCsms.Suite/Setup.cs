@@ -3,12 +3,14 @@ namespace OpenCsms.Suite;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using OpenCsms.Api;
+using OpenCsms.AppHost;
 using OpenCsms.Contracts;
 using OpenCsms.Infrastructure;
 using OpenCsms.Infrastructure.Notifications;
 using OpenCsms.Suite.Devices;
 using OpenCsms.Suite.Support;
 using ProtoTest.AspNetCore;
+using ProtoTest.Aspire;
 using ProtoTest.Core;
 using ProtoTest.Data;
 using ProtoTest.Devices;
@@ -36,7 +38,9 @@ using NotificationWorker = OpenCsms.Notification.Worker.Program;
 /// dashboard application - declares an ordered provider chain, and the first provider whose condition
 /// holds serves it. In a development run the suite's containers start and the application and its
 /// workers run in-process; an environment that exports the declared keys serves the store, the broker
-/// and the applications instead, and runs the workers itself; one Setup in every mode.
+/// and the applications instead, and runs the workers itself; with <c>ProtoTest:Aspire:Enabled</c> set
+/// the AppHost serves those targets and runs the workers, so the suite's worker hosts step aside. One
+/// Setup in every mode.
 /// </summary>
 [SetUpFixture]
 public sealed class Setup : ProtoTestAssembly
@@ -66,18 +70,35 @@ public sealed class Setup : ProtoTestAssembly
                     [NotificationSettings.BillingFailureBaseUrlKey] = $"http://127.0.0.1:{billingFailurePort}"
                 })
                 .AddEnvironmentVariables())
-            // The store and the broker: a configured connection string serves the target, and the
-            // suite's own container starts only when the environment does not provide one.
+            // The topology: the AppHost starts PostgreSQL, RabbitMQ, the API (which also serves the
+            // dashboard) and both workers as project resources. Its providers serve only when
+            // ProtoTest:Aspire:Enabled is set, which the run script does, and it declares here the
+            // resources the suite's targets reference. A run that exports the store or broker keys
+            // keeps them: the AppHost's graph skips the resource for a provided key and injects the
+            // environment's value into the projects instead.
+            .AddAspireAppHost<OpenCsmsAppHostAnchor>(
+                options => options
+                    .MapResource("api", CsmsTargets.Api)
+                    .MapConnectionString("opencsms", CsmsInfrastructureExtensions.ConnectionStringKey)
+                    .MapConnectionString("rabbitmq", RabbitMqOptions.ConnectionStringSetting),
+                "api",
+                "opencsms",
+                "rabbitmq")
+            // The store and the broker: a configured connection string serves the target, the
+            // AppHost's resource serves it in topology mode, and the suite's own container starts
+            // only when neither does.
             .AddInfrastructure(
                 "CsmsDatabase",
                 chain => chain
                     .UseConfigured()
+                    .UseAspireResource<OpenCsmsAppHostAnchor>("opencsms")
                     .UseContainer(PostgresDatabase.Container()),
                 CsmsInfrastructureExtensions.ConnectionStringKey)
             .AddInfrastructure(
                 "CsmsBroker",
                 chain => chain
                     .UseConfigured()
+                    .UseAspireResource<OpenCsmsAppHostAnchor>("rabbitmq")
                     .UseContainer(RabbitMqBroker.Container()),
                 RabbitMqOptions.ConnectionStringSetting,
                 "Messaging:RabbitMq:ConnectionString")
@@ -87,11 +108,6 @@ public sealed class Setup : ProtoTestAssembly
                     .UseConfigured()
                     .Use(new ProtoTargetProvider("dashboard-build", new DashboardBuildInfrastructure())),
                 DashboardHosting.SettingKey)
-            // The seeded busy month both tenants share: volume for the export journey, composed from
-            // the product's own application services once per run (idempotent across reruns), after
-            // the store whose connection string it reads. ProtoTest:Seed=off leaves the target
-            // alone, and the seeded journeys skip with it.
-            .AddRunSetup("seeded-month", SeededMonth.SeedAsync)
             // Per-test prerequisites ride the Data provisioners below: the route is the product's
             // front door (the REST API), so the creation rules stay in the product.
             .AddData()
@@ -105,10 +121,12 @@ public sealed class Setup : ProtoTestAssembly
             // runs in-process and over the socket when its address belongs to an environment.
             .AddInProcessWebSocketDevices<CsmsApi>(CsmsTargets.Api)
             // The API application, with the billing worker that belongs to it: an environment that
-            // configures the address serves the application and runs the worker; otherwise the
-            // in-process test server wins and the run hosts the worker's own entry point.
+            // configures the address - or the AppHost, when it is selected - serves the application
+            // and runs the worker; otherwise the in-process test server wins and the run hosts the
+            // worker's own entry point.
             .AddApplication(CsmsTargets.Api, app => app
                 .UseConfigured()
+                .UseAspireResource<OpenCsmsAppHostAnchor>("api")
                 .UseInProcess<CsmsApi>(webHost => webHost
                     // The operator's remote commands wait for the device's own answer. The product's
                     // default is ten seconds; two keep the timeout journey fast while a charge point
@@ -127,13 +145,15 @@ public sealed class Setup : ProtoTestAssembly
                     .AddCollector<RestCoverageCollector>()))
             .AddHttpReadiness(CsmsTargets.Api, "/healthz")
             // The dashboard application carries the browser, while the REST and OCPP clients above
-            // keep resolving the API's winner. A browser needs a real address, so when the
-            // environment configures none the run starts the hand-built application on its own
-            // loopback listener; the dashboard's charge-point client then reaches that same running
-            // instance over a real socket, so the remote-stop click test drives a connected charge
-            // point through the UI.
+            // keep resolving the API's winner. A browser needs a real address, so when neither the
+            // environment nor the AppHost configures one the run starts the hand-built application on
+            // its own loopback listener; the dashboard's charge-point client then reaches that same
+            // running instance over a real socket, so the remote-stop click test drives a connected
+            // charge point through the UI. In topology mode the API serves the dashboard at its own
+            // address, so both applications publish the same one.
             .AddApplication(CsmsTargets.Dashboard, app => app
                 .UseConfigured()
+                .UseAspireResource<OpenCsmsAppHostAnchor>("api")
                 .UseLoopback(CsmsApi.Create)
                 .AddWeb(options => options.InstallBrowsers = true)
                 .AddDevices(devices => devices
@@ -141,11 +161,19 @@ public sealed class Setup : ProtoTestAssembly
                         .AddDevice<AcCharger>()
                         .AddProtocol<OcppProtocol>()))
             .AddHttpReadiness(CsmsTargets.Dashboard, "/healthz")
+            // The seeded busy month both tenants share: volume for the export journey, composed from
+            // the product's own application services once per run (idempotent across reruns). It runs
+            // after the store target and the readiness probes, so in topology mode the API has
+            // migrated the AppHost's fresh database before the seed writes to it. ProtoTest:Seed=off
+            // leaves the target alone, and the seeded journeys skip with it.
+            .AddRunSetup("seeded-month", SeededMonth.SeedAsync)
             .AddMessaging(messaging => messaging
                 .CaptureAttachments()
-                // Pre-bind the test's tap before the system under test publishes: the worker can
-                // publish invoice.issued before a test reaches its first AwaitAsync.
-                .Tap(CsmsEvents.Exchange)
+                // Pre-bind the test's taps before the system under test publishes: the worker can
+                // publish invoice.issued before a test reaches its first AwaitAsync, and the
+                // dead-letter journeys await the product's dead-letter exchanges, whose bindings carry
+                // the copy into the dead-letter queues.
+                .Tap(CsmsEvents.Exchange, CsmsEvents.DeadLetterExchange, CsmsEvents.NotificationsDeadLetterExchange)
                 .UseRabbitMq())
             // The external notification targets: per-run fakes on the reserved ports, so the hosted
             // worker's configured addresses stay valid for every test while each journey reads its

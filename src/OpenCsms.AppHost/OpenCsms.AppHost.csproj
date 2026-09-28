@@ -1,0 +1,27 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.5.4">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- The suite's AppHost leg runs on the suite's target framework. The Aspire testing host
+         runs this assembly's entry point inside the test process, and DCP launches the project
+         resources with `dotnet run`, which cannot choose a target framework for a multi-targeted
+         project; every OpenCSMS project is net8.0. -->
+    <TargetFramework>net8.0</TargetFramework>
+    <IsTestProject>false</IsTestProject>
+    <!-- The AppHost is driven through the Aspire testing host; the CLI bundle `aspire run` would
+         use is not needed, so its absence is not a build error. -->
+    <NoWarn>$(NoWarn);ASPIRE010</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.PostgreSQL" Version="13.5.4" />
+    <PackageReference Include="Aspire.Hosting.RabbitMQ" Version="13.5.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenCsms.Api\OpenCsms.Api.csproj" />
+    <ProjectReference Include="..\OpenCsms.Billing.Worker\OpenCsms.Billing.Worker.csproj" />
+    <ProjectReference Include="..\OpenCsms.Notification.Worker\OpenCsms.Notification.Worker.csproj" />
+  </ItemGroup>
+
+</Project>

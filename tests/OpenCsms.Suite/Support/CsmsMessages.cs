@@ -29,4 +29,42 @@ public static class CsmsMessages
             return false;
         }
     }
+
+    /// <summary>Whether the message is a <c>session.ended</c> event for the session.</summary>
+    public static bool IsSessionEndedFor(ProtoMessage message, Guid sessionId)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        if (message.Payload is null || !message.Payload.Contains(sessionId.ToString(), StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        try
+        {
+            return message.ReadAsJson<SessionEnded>()?.SessionId == sessionId;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Whether the message is a <c>billing.failed</c> report for the session.</summary>
+    public static bool IsBillingFailedFor(ProtoMessage message, Guid sessionId)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        if (message.Payload is null || !message.Payload.Contains(sessionId.ToString(), StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        try
+        {
+            return message.ReadAsJson<SessionBillingFailed>()?.SessionId == sessionId;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
 }

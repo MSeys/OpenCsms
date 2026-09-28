@@ -8,7 +8,8 @@ using OpenCsms.Application.Ports;
 /// The charge points that are connected right now, keyed by their OCPP identity. The gateway adds a
 /// connection while its socket lives; the application's operator commands reach one through
 /// <see cref="IChargePointConnections"/>, so the registry stays a transport concern with a narrow
-/// port. A charge point that reconnects replaces its old connection, which is closed.
+/// port. A host that does not serve OCPP registers the transport-less default instead. A charge point
+/// that reconnects replaces its old connection, which is closed.
 /// </summary>
 public sealed class ChargePointConnections : IChargePointConnections
 {

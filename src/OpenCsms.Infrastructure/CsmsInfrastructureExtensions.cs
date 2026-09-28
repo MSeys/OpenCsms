@@ -2,15 +2,19 @@ namespace OpenCsms.Infrastructure;
 
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using OpenCsms.Application.Ports;
 using OpenCsms.Infrastructure.Export;
 using OpenCsms.Infrastructure.Messaging;
 using OpenCsms.Infrastructure.Notifications;
+using OpenCsms.Infrastructure.Ocpp;
 using OpenCsms.Infrastructure.Persistence;
 
 /// <summary>
 /// The infrastructure's one entry point. A composition root calls <see cref="AddCsmsInfrastructure"/>
-/// and gets the store with the application's persistence ports and the RabbitMQ event publisher;
-/// <see cref="MigrateCsmsData"/> is the one migration step the API runs at boot.
+/// and gets the store with the application's persistence ports, the RabbitMQ event publisher and the
+/// transport-less charge-point registry; <see cref="MigrateCsmsData"/> is the one migration step the
+/// API runs at boot.
 /// </summary>
 public static class CsmsInfrastructureExtensions
 {
@@ -29,6 +33,10 @@ public static class CsmsInfrastructureExtensions
         ArgumentNullException.ThrowIfNull(services);
         services.AddCsmsPersistence();
         services.AddRabbitMqEventPublisher();
+        // The application's operator commands need a charge-point registry, and only a host that
+        // serves the OCPP edge has connections: every other host (a worker) resolves this
+        // transport-less default, and the API replaces it with the registry its gateway fills.
+        services.TryAddSingleton<IChargePointConnections, EmptyChargePointConnections>();
         // Every host that composes the infrastructure sweeps the outbox for pending events: the API
         // and the billing worker together guarantee an event committed by the API reaches the broker
         // even if the API process ends before its own attempt succeeded.

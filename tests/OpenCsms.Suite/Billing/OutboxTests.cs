@@ -13,6 +13,7 @@ using ProtoTest.AspNetCore;
 using ProtoTest.Core;
 using ProtoTest.Http;
 using ProtoTest.Messaging;
+using ProtoTest.Messaging.RabbitMq;
 using ProtoTest.NUnit;
 using ProtoTest.Rest;
 using BillingWorker = OpenCsms.Billing.Worker.Program;
@@ -48,7 +49,7 @@ public sealed class OutboxTests
         var started = await StartSessionAsync(op.StationId, connectorId: 1);
         await RecordMeterAsync(started.Id, 22m);
         var publisher = new FailFirstAttemptsEventPublisher(
-            RabbitMqRawClient.ResolveConnectionString(Proto.Context),
+            BrokerAddress(Proto.Context),
             failures: 1,
             matches: (_, message) => message?.ToString()?.Contains(started.Id.ToString(), StringComparison.Ordinal) == true);
         Proto.Context.Override<IEventPublisher>(publisher);
@@ -97,7 +98,7 @@ public sealed class OutboxTests
         await RecordMeterAsync(started.Id, 22m);
 
         var publisher = new FailFirstAttemptsEventPublisher(
-            RabbitMqRawClient.ResolveConnectionString(Proto.Context),
+            BrokerAddress(Proto.Context),
             failures: 2,
             matches: (_, message) => message?.ToString()?.Contains(started.Id.ToString(), StringComparison.Ordinal) == true);
         Proto.Context.Override<IEventPublisher>(publisher);
@@ -166,6 +167,13 @@ public sealed class OutboxTests
             CancellationToken.None);
         return result.Value;
     }
+
+    /// <summary>
+    /// The broker address the run uses, resolved through the messaging options: an explicitly
+    /// configured connection string wins, then the container or AppHost the run started.
+    /// </summary>
+    private static string BrokerAddress(ProtoExecutionContext context)
+        => context.Service<RabbitMqOptions>().ConnectionString;
 
     private static async Task<InvoiceIssued> AwaitInvoiceIssuedAsync(Guid sessionId)
     {

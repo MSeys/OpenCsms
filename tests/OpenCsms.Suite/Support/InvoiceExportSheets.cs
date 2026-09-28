@@ -23,7 +23,7 @@ public sealed record InvoiceExportRow(
 /// <summary>The summary sheet's labels, as written by the export's summary block.</summary>
 [Sheet("Summary", Kind = ProtoSheetKind.KeyValue)]
 public sealed record InvoiceExportSummary(
-    [property: Column("Month")] string Month,
-    [property: Column("Invoices")] int Count,
-    [property: Column("Total")] decimal Total,
-    [property: Column("Currency")] string Currency);
+    [property: Label("Month")] string Month,
+    [property: Label("Invoices")] int Count,
+    [property: Label("Total")] decimal Total,
+    [property: Label("Currency")] string Currency);
