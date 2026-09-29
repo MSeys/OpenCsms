@@ -7,12 +7,8 @@ using OpenCsms.Domain;
 using OpenCsms.Protocol.Ocpp;
 
 /// <summary>
-/// The OCPP 1.6J gateway: one WebSocket per charge point at <c>/ocpp/{chargePointId}</c>. Each call
-/// is parsed through the protocol, handed to the application's charge-point use cases over the store
-/// ports, and its outcome mapped back to the OCPP answer; the same <c>session.ended</c> event the
-/// REST API publishes reaches the billing worker. Answers are call results, and anything the subset
-/// does not implement is refused with a call error instead of a guess. The exact subset is documented
-/// in the repository README.
+/// The OCPP 1.6J gateway: one WebSocket per charge point. Unimplemented actions are refused with a
+/// call error instead of a guess.
 /// </summary>
 public sealed class OcppGateway(
     IServiceScopeFactory scopeFactory,
@@ -50,7 +46,7 @@ public sealed class OcppGateway(
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
-            // The run stopped or the client went away; the connection is released below either way.
+            // The run stopped or the client went away.
         }
         finally
         {

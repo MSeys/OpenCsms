@@ -9,12 +9,9 @@ using OpenCsms.Contracts;
 using OpenCsms.Infrastructure.Messaging;
 
 /// <summary>
-/// Consumes <c>session.ended</c> and hands each delivery to the application's billing use case,
-/// <see cref="InvoiceIssuance"/>. The retry and dead-letter semantics are the shared consumer loop's;
-/// what billing means, and which failures are retryable, is the use case's. A session the worker
-/// gives up on is reported as <c>billing.failed</c> before the delivery is dead-lettered, so the
-/// notification worker can tell the operator that an invoice will never appear. The unique session
-/// index in the store makes storing idempotent.
+/// Hands each <c>session.ended</c> delivery to <see cref="InvoiceIssuance"/>. A session the worker
+/// gives up on is reported as <c>billing.failed</c> first, so the notification worker can tell the
+/// operator that an invoice will never appear.
 /// </summary>
 public sealed class SessionEndedConsumer(
     IServiceScopeFactory scopeFactory,

@@ -6,14 +6,7 @@ using ProtoTest.Core;
 using ProtoTest.Devices;
 
 /// <summary>
-/// The OCPP 1.6J charge point the suite drives through ProtoTest.Devices.WebSocket, against the CSMS's
-/// documented subset. Calls use the shared framing, every client call waits for its own answer, and a
-/// server-initiated call (RemoteStart/Stop) can be received and answered - the duplex a real charger
-/// has. <see cref="RefusedAsync"/> reads the call error the gateway answers a bad call with; a server
-/// call can also be answered with a call error (<see cref="RefuseRemoteStartAsync"/>), the way a device
-/// that cannot execute it refuses. <see cref="PlugInAsync"/>, <see cref="MeterValuesAsync"/> and
-/// <see cref="UnplugAsync"/> are the ergonomic face a journey reads: they send the connector's own meter
-/// readings and run its status transitions, and their timestamps come from the test's clock, so advanced
+/// The OCPP 1.6J charge point the suite drives. Its timestamps come from the test clock, so advanced
 /// time is what the wire carries.
 /// </summary>
 public sealed class AcCharger : ProtoDevice
@@ -334,7 +327,7 @@ public sealed class AcCharger : ProtoDevice
         {
             OcppCallResult result => OcppJson.ReadPayload<T>(result.Payload),
             OcppCallError error => throw new InvalidOperationException(
-                $"The CSMS refused {action}: {error.ErrorCode} — {error.Description}"),
+                $"The CSMS refused {action} with {error.ErrorCode}: {error.Description}"),
             _ => throw new OcppProtocolException($"The answer to {action} was not a result or an error.")
         };
     }

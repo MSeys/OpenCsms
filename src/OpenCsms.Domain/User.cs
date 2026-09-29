@@ -58,6 +58,7 @@ public sealed class User
 
     public DateTimeOffset CreatedAtUtc { get; private set; }
 
+    /// <summary>An account with a normalized sign-in address, a role and the instant it was created.</summary>
     public static User Create(
         string tenantId,
         string email,

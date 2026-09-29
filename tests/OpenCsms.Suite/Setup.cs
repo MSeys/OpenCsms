@@ -33,14 +33,9 @@ using CsmsApi = OpenCsms.Api.Program;
 using NotificationWorker = OpenCsms.Notification.Worker.Program;
 
 /// <summary>
-/// The suite's only environment-specific file, and it has no environment conditionals: every target -
-/// the store, the broker, the API application with its billing and notification workers, the
-/// dashboard application - declares an ordered provider chain, and the first provider whose condition
-/// holds serves it. In a development run the suite's containers start and the application and its
-/// workers run in-process; an environment that exports the declared keys serves the store, the broker
-/// and the applications instead, and runs the workers itself; with <c>ProtoTest:Aspire:Enabled</c> set
-/// the AppHost serves those targets and runs the workers, so the suite's worker hosts step aside. One
-/// Setup in every mode.
+/// One setup for every mode: each target declares an ordered provider chain and the first provider
+/// whose condition holds serves it, so containers, an in-process host and an environment's own
+/// addresses all run the same journeys.
 /// </summary>
 [SetUpFixture]
 public sealed class Setup : ProtoTestAssembly
@@ -48,10 +43,7 @@ public sealed class Setup : ProtoTestAssembly
     protected override void Configure(IProtoHostBuilder builder)
     {
         // The notification worker reads its targets once, when its host starts, so the fakes that
-        // serve those targets must listen on ports reserved before the run: one for the PSP/email
-        // target that receives invoice-ready notifications, one for the operator's alerting webhook
-        // that receives billing failures. The addresses travel as run configuration, which the
-        // hosted worker reads like any deployment's.
+        // serve them must listen on ports reserved before the run.
         var invoiceReadyPort = LoopbackPort.Reserve();
         var billingFailurePort = LoopbackPort.Reserve();
 
@@ -70,12 +62,7 @@ public sealed class Setup : ProtoTestAssembly
                     [NotificationSettings.BillingFailureBaseUrlKey] = $"http://127.0.0.1:{billingFailurePort}"
                 })
                 .AddEnvironmentVariables())
-            // The topology: the AppHost starts PostgreSQL, RabbitMQ, the API (which also serves the
-            // dashboard) and both workers as project resources. Its providers serve only when
-            // ProtoTest:Aspire:Enabled is set, which the run script does, and it declares here the
-            // resources the suite's targets reference. A run that exports the store or broker keys
-            // keeps them: the AppHost's graph skips the resource for a provided key and injects the
-            // environment's value into the projects instead.
+            // The topology, selected by ProtoTest:Aspire:Enabled, which the run script sets.
             .AddAspireAppHost<OpenCsmsAppHostAnchor>(
                 options => options
                     .MapResource("api", CsmsTargets.Api)
@@ -144,13 +131,9 @@ public sealed class Setup : ProtoTestAssembly
                     .AddClient(CsmsTargets.Api)
                     .AddCollector<RestCoverageCollector>()))
             .AddHttpReadiness(CsmsTargets.Api, "/healthz")
-            // The dashboard application carries the browser, while the REST and OCPP clients above
-            // keep resolving the API's winner. A browser needs a real address, so when neither the
-            // environment nor the AppHost configures one the run starts the hand-built application on
-            // its own loopback listener; the dashboard's charge-point client then reaches that same
-            // running instance over a real socket, so the remote-stop click test drives a connected
-            // charge point through the UI. In topology mode the API serves the dashboard at its own
-            // address, so both applications publish the same one.
+            // The dashboard application carries the browser. A browser needs a real address, so when
+            // neither the environment nor the AppHost configures one the run starts the application
+            // on its own loopback listener and the charge-point client reaches that same instance.
             .AddApplication(CsmsTargets.Dashboard, app => app
                 .UseConfigured()
                 .UseAspireResource<OpenCsmsAppHostAnchor>("api")
@@ -161,11 +144,8 @@ public sealed class Setup : ProtoTestAssembly
                         .AddDevice<AcCharger>()
                         .AddProtocol<OcppProtocol>()))
             .AddHttpReadiness(CsmsTargets.Dashboard, "/healthz")
-            // The seeded busy month both tenants share: volume for the export journey, composed from
-            // the product's own application services once per run (idempotent across reruns). It runs
-            // after the store target and the readiness probes, so in topology mode the API has
-            // migrated the AppHost's fresh database before the seed writes to it. ProtoTest:Seed=off
-            // leaves the target alone, and the seeded journeys skip with it.
+            // The seeded busy month runs after the store and the readiness probes, so in topology
+            // mode the API has migrated the AppHost's fresh database before the seed writes to it.
             .AddRunSetup("seeded-month", SeededMonth.SeedAsync)
             .AddMessaging(messaging => messaging
                 .CaptureAttachments()

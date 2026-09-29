@@ -15,13 +15,9 @@ using OpenCsms.Infrastructure;
 using ProtoTest.Core;
 
 /// <summary>
-/// The run's seeded busy month: two tenants sharing one May 2030, each with a tariff, a station, an
-/// operator admin and <see cref="SessionsPerTenant"/> billed sessions, so the export journey reads
-/// hundreds of rows without arranging them through REST one by one. This is volume, not
-/// prerequisites: per-test tenants, tariffs and stations still go through the API in
-/// <see cref="CsmsOperatorAttribute"/>, and only this seeder composes the product's application
-/// services in-process. It runs once per run as a run setup step and is idempotent: a rerun against
-/// a database that already holds the seeded tariff finds the marker and stores nothing.
+/// The run's seeded busy month: two tenants sharing one May 2030, each with <see cref="SessionsPerTenant"/>
+/// billed sessions, so the export journey reads hundreds of rows without arranging them over REST. It is
+/// volume, not prerequisites, and it is idempotent: a rerun finds the marker tariff and stores nothing.
 /// </summary>
 public static class SeededMonth
 {
@@ -34,16 +30,10 @@ public static class SeededMonth
     /// <summary>The seeded tariff's name: the idempotency marker a rerun looks for.</summary>
     public const string TariffName = "Seeded busy month";
 
-    /// <summary>
-    /// The product's switch: set to <c>off</c>, the run leaves the target's data alone - no migration
-    /// and no seeding - and the seeded journeys skip.
-    /// </summary>
+    /// <summary>Set to <c>off</c>, the run leaves the target's data alone and the seeded journeys skip.</summary>
     public const string SeedSettingKey = "ProtoTest:Seed";
 
-    /// <summary>
-    /// Whether this run ensured the seeded month: the seed step sets it once the marker is present,
-    /// so the journeys that read the seeded rows gate on it instead of failing without the data.
-    /// </summary>
+    /// <summary>Whether this run ensured the seeded month; the journeys that read it gate on this.</summary>
     public static bool IsSeeded { get; private set; }
 
     public static readonly SeededTenant TenantA = new(

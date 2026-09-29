@@ -3,8 +3,9 @@
 # command a developer runs locally, `eng/run-suite.ps1 -Mode container`, so CI proves the mode
 # rather than a CI-shaped path around it.
 #
-# Honesty note: this repository has no remote yet, so this file has not run on GitHub. The evidence
-# for the container leg is a local rehearsal of the same command. A hosted run additionally needs
+# Until this repository has a remote, no workflow has run on GitHub; the evidence
+# for the container leg is a local rehearsal of the same command. Delete this note when the first
+# hosted run lands. A hosted run additionally needs
 # the 1.1 ProtoTest packages reachable: NuGet.config maps ProtoTest.* to the sibling checkout's
 # local feed while 1.1 is under development (README, "Packages"), and nuget.org carries 1.0.x only.
 

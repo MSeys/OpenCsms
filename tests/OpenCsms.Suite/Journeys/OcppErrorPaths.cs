@@ -14,17 +14,8 @@ using ProtoTest.Rest;
 using BillingWorker = OpenCsms.Billing.Worker.Program;
 
 /// <summary>
-/// The gateway error paths, driven through the simulator exactly as the happy journeys are: a stop the
-/// charge point resends is answered without ending or billing anything twice; meter values the
-/// gateway cannot read, or that move backwards, are refused with the OCPP error code their rule
-/// names and leave the session as it was; a charge point no station is registered for is rejected at
-/// boot and refused every other call; the calls outside the documented subset, or outside the
-/// station's connectors, are refused without touching the store; a second start on a charging
-/// connector is answered ConcurrentTx with the running transaction's number, opening nothing; and a
-/// charge point that drops and reconnects five times keeps its session on the registry's live
-/// connection, which a forwarded remote start proves; and an operator remote start whose connection
-/// dies mid-call - a reconnect replacing it - is answered as the offline charge point it is, while
-/// the next call reaches the live connection. Each refusal pins the code the README documents.
+/// The gateway error paths through the simulator: a resend or a rejected frame is answered the way a
+/// real charge point sees it, and leaves the store where the accepted call left it.
 /// </summary>
 [Application(CsmsTargets.Api)]
 [Auth<CsmsMachineKeyAuthenticator>]
@@ -52,8 +43,8 @@ public sealed class OcppErrorPaths
         using var firstInvoice = await ReadIssuedInvoiceAsync(endedSession);
         var first = firstInvoice.ReadRequired<InvoiceResponse>();
 
-        // Act: a minute later the charge point resends the stop it lost the answer to. A session that
-        // were ended a second time would carry the later instant, not the first stop's.
+        // Act: a minute later the charge point resends the stop it lost the answer to. A session ended a
+        // second time would carry the later instant, not the first stop's.
         Proto.Context.Clock.Advance(TimeSpan.FromMinutes(1));
         var resent = await charger.StopTransactionAsync(
             session.TransactionId,
@@ -338,11 +329,7 @@ public sealed class OcppErrorPaths
         }
     }
 
-    /// <summary>
-    /// The malformed meter value in one place: the session first records a good 22 kWh reading, the
-    /// sample under test is refused with <paramref name="expectedErrorCode"/>, and the session must
-    /// still be open at 22 kWh afterwards.
-    /// </summary>
+    /// <summary>Refuses one malformed sample, leaving the session open at the good reading it took first.</summary>
     private static async Task RefusedMeterValueLeavesTheSessionUnchangedAsync(
         SampledValue malformed,
         string expectedErrorCode)

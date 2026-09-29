@@ -2,8 +2,8 @@ using Microsoft.Extensions.Configuration;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
-// The product reads its store from 'ConnectionStrings:Csms' and its broker from
-// 'Messaging:RabbitMq:ConnectionString' - the same keys the suite's targets declare. A run that
+// The product reads its store from <c>ConnectionStrings:Csms</c> and its broker from
+// <c>Messaging:RabbitMq:ConnectionString</c> - the same keys the suite's targets declare. A run that
 // already provides either one keeps it: the graph declares its own resource only when the key is
 // absent and injects the provided value into the projects either way, so an AppHost application
 // can run against a store the environment started.

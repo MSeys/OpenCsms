@@ -6,13 +6,8 @@ using ProtoTest.Core;
 using ProtoTest.Data;
 
 /// <summary>
-/// The per-test prerequisite orchestration every operator setup shares: register a tenant through
-/// <c>POST /api/tenants</c>, then its tariff, station and dashboard account through the product's
-/// front door, with the mechanics on ProtoTest.Data provisioners. The tenant's machine key is the
-/// credential every one of those calls carries, and it stays in the test context for the test's own
-/// management calls. Names arrive computed (unique per test), so reruns against a database that
-/// outlives the test process keep their own rows. The API has no delete route, so provisioned rows
-/// stay; uniqueness is what keeps tests independent.
+/// Registers the test tenant, tariff, station and operator admin through the REST front door. The API
+/// has no delete route, so unique names are what keep tests independent of each other.
 /// </summary>
 public static class CsmsProvisioning
 {

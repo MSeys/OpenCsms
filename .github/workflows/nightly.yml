@@ -4,8 +4,9 @@
 # them. It is the slow leg - DCP container pulls and process starts on top of the container leg's
 # work - so it runs on a schedule and on dispatch, never on every PR.
 #
-# Honesty note: this repository has no remote yet, so this file has not run on GitHub. The evidence
-# for the topology leg is a local rehearsal of the same command. A hosted run additionally needs
+# Until this repository has a remote, no workflow has run on GitHub; the evidence
+# for the topology leg is a local rehearsal of the same command. Delete this note when the first
+# hosted run lands. A hosted run additionally needs
 # the 1.1 ProtoTest packages reachable (NuGet.config maps ProtoTest.* to the sibling checkout's
 # local feed while 1.1 is under development; README, "Packages"), and scheduled workflows only run
 # on the default branch once one exists.

@@ -65,9 +65,7 @@ internal sealed class DashboardBuildInfrastructure : IProtoSettingsInfrastructur
 
 /// <summary>
 /// Skips the browser journeys with a clear reason when the built dashboard is missing, so a machine
-/// without Node or without a completed build gets a green, honest run instead of a browser looking at
-/// the not-built page. The gate (<c>eng/run-suite.ps1</c>) builds the dashboard before it runs the
-/// suite, so this condition only fires outside the gate.
+/// without Node or without a completed build reports skipped rather than looking at the not-built page.
 /// </summary>
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, Inherited = true)]
 public sealed class RequiresDashboardBuildAttribute : ProtoAttribute, IProtoSkipCondition

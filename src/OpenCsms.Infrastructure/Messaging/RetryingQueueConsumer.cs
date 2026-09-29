@@ -10,13 +10,7 @@ using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
 /// <summary>
-/// The delivery loop every queue consumer in the product shares: connect, declare the topology, then
-/// hand each delivery to <see cref="HandleAsync"/>. A failed delivery is retried in-process -
-/// republished with a retries header, then acknowledged - until <see cref="MaxRetries"/> completed
-/// retries are spent; the next failure is dead-lettered through the queue's
-/// <c>x-dead-letter-exchange</c> and never retried again, so a consumer never spins on a poisonous
-/// message. The header counts completed retries, not attempts: absent on the first delivery, 1 on the
-/// second, and <see cref="MaxRetries"/> on the dead-lettered attempt. What the message means and
+/// The shared queue delivery loop: in-process retries, then dead-letter. What the message means and
 /// which failures are retryable stay the subclass's business.
 /// </summary>
 public abstract class RetryingQueueConsumer<TMessage> : BackgroundService

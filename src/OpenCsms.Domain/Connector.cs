@@ -35,6 +35,7 @@ public sealed class Connector
 
     public DateTimeOffset UpdatedAtUtc { get; private set; }
 
+    /// <summary>A connector of a station reporting the status it was seen in, at the instant it was seen.</summary>
     public static Connector Report(
         Guid stationId,
         int connectorId,

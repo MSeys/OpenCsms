@@ -5,13 +5,8 @@ using OpenCsms.Application.Ports;
 using OpenCsms.Infrastructure.Messaging;
 
 /// <summary>
-/// The fault-injecting publisher a test substitutes for <see cref="IEventPublisher"/>: its first
-/// <paramref name="failures"/> matching publish attempts fail and every later attempt delegates to
-/// the product's own RabbitMQ publisher, so a retry travels the real broker path. <paramref name="matches"/>
-/// narrows the fault to the test's own event - other pending rows a dispatcher sweeps must not spend
-/// the failure budget - while <see langword="null"/> fails every attempt. The test keeps the
-/// instance, so what it saw is the test's evidence: an event published directly by the failing flow
-/// is lost, an event that survives it was delivered by an attempt after the failures.
+/// Fails the first <c>failures</c> publishes that <c>matches</c> accepts, then delegates to the real
+/// publisher, so a retry travels the real broker path.
 /// </summary>
 public sealed class FailFirstAttemptsEventPublisher : IEventPublisher, IAsyncDisposable
 {

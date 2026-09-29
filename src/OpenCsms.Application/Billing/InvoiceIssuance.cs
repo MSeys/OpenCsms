@@ -6,13 +6,9 @@ using OpenCsms.Contracts;
 using OpenCsms.Domain;
 
 /// <summary>
-/// The billing use case behind a delivered <c>session.ended</c>: issue the session's invoice exactly
-/// once, then publish <c>invoice.issued</c>. The bill uses the tariff terms the session started
-/// under, so a repricing while the session was open cannot change it. The unique session index in
-/// the store makes the issue idempotent; publishing is mandatory on every delivery, including a
-/// redelivery, and a failed publish surfaces to the caller so its retry path sees it. The invoice is
-/// stamped with the application clock, not the machine's. Delivery, retries and dead-lettering are
-/// the transport host's business, not this use case's.
+/// Issues the session's invoice exactly once per delivery of <c>session.ended</c>, then publishes
+/// <c>invoice.issued</c>. The bill uses the tariff terms the session started under, so a repricing
+/// while the session was open cannot change it.
 /// </summary>
 public sealed class InvoiceIssuance(
     IInvoiceQueries invoiceQueries,

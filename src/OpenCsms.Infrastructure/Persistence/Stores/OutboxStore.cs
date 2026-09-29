@@ -8,11 +8,7 @@ using OpenCsms.Application.Ports;
 /// <summary>
 /// The outbox over the one CSMS store. <see cref="Enqueue{T}"/> writes the event into the caller's
 /// unit of work, so the store never holds a state change without its event, and the dispatch methods
-/// publish the stored rows with at-least-once semantics. An attempt reserves its row before
-/// publishing: two dispatchers never publish the same attempt twice, and a row whose dispatcher died
-/// mid-publish becomes available again when the reservation expires. A failed attempt records the
-/// failure and schedules the next one with a bounded backoff instead of throwing, so a broker outage
-/// never surfaces as a lost event or a failed request.
+/// publish the stored rows with at-least-once semantics.
 /// </summary>
 public sealed class OutboxStore(
     CsmsDbContext db,
@@ -20,6 +16,9 @@ public sealed class OutboxStore(
     TimeProvider clock,
     ILogger<OutboxStore> logger) : IOutbox
 {
+    // The attempt and retry stamps read the machine clock, not the injected one: they lease each row
+    // between the dispatchers in every process, and those have to agree on one timeline.
+
     /// <summary>How many due rows one sweep publishes.</summary>
     private const int BatchSize = 32;
 

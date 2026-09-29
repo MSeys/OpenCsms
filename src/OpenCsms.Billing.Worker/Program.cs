@@ -23,9 +23,8 @@ public sealed class Program
         builder.Services.AddHostedService<SessionEndedConsumer>();
         var host = builder.Build();
 
-        // Migrations run from the API only: EF Core 8 does not serialize concurrent migrations,
-        // and the suite starts the hosts sequentially. Revisit this if hosts ever boot concurrently
-        // (a PostgreSQL advisory lock, or one designated migrator).
+        // Migrations run from the API only: EF Core 8 does not serialize concurrent migrations, and
+        // the suite starts the hosts sequentially.
         host.Run();
     }
 }

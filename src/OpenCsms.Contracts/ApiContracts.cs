@@ -1,5 +1,6 @@
 namespace OpenCsms.Contracts;
 
+/// <summary>The pricing terms a new tariff is registered with; the defaults make a plain energy price.</summary>
 public sealed record RegisterTariffRequest(
     string Name,
     decimal EnergyPricePerKwh,
@@ -8,19 +9,23 @@ public sealed record RegisterTariffRequest(
     TimeSpan? IdleGracePeriod = null,
     string? Currency = null);
 
+/// <summary>The charge point identity, connector count and tariff a new station is registered under.</summary>
 public sealed record RegisterStationRequest(
     string ChargePointId,
     string Name,
     int ConnectorCount,
     Guid TariffId);
 
+/// <summary>The operator starts a session on one of a station's connectors.</summary>
 public sealed record StartSessionRequest(Guid StationId, int ConnectorId);
 
+/// <summary>The connector's cumulative meter reading; the session bills what rose above its start.</summary>
 public sealed record MeterValueRequest(decimal TotalKwh);
 
 /// <summary>The operator asks a connected charge point to start a transaction.</summary>
 public sealed record RemoteStartRequest(string IdTag, int? ConnectorId = null);
 
+/// <summary>A tariff as the operator's dashboard shows it.</summary>
 public sealed record TariffResponse(
     Guid Id,
     string TenantId,
@@ -31,6 +36,7 @@ public sealed record TariffResponse(
     TimeSpan IdleGracePeriod,
     string Currency);
 
+/// <summary>A station as the operator's API returns it, with the last time its charge point was seen.</summary>
 public sealed record StationResponse(
     Guid Id,
     string TenantId,
@@ -47,6 +53,7 @@ public sealed record ConnectorResponse(
     string ErrorCode,
     DateTimeOffset UpdatedAtUtc);
 
+/// <summary>A charging session and where it stands; an open one reports no end and no energy yet.</summary>
 public sealed record SessionResponse(
     Guid Id,
     int TransactionId,
@@ -61,6 +68,7 @@ public sealed record SessionResponse(
 /// <summary>The device's authorization decision for a server-initiated call.</summary>
 public sealed record RemoteCommandResponse(string Status);
 
+/// <summary>A billed session: what the tariff terms charged, and when the invoice was issued.</summary>
 public sealed record InvoiceResponse(
     Guid Id,
     Guid SessionId,
@@ -91,6 +99,7 @@ public sealed record UpdateTariffRequest(
     decimal IdleFeePerHour,
     TimeSpan IdleGracePeriod);
 
+/// <summary>A dashboard account, as the operator's API returns it.</summary>
 public sealed record UserResponse(
     Guid Id,
     string TenantId,

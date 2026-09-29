@@ -3,14 +3,9 @@ namespace OpenCsms.Suite.Support;
 using ProtoTest.Core;
 
 /// <summary>
-/// Provisions this test's isolated operator - a tenant with its machine credential, its tariff, its
-/// station and the operator admin's dashboard account - with names from
-/// <see cref="ProtoExecutionContext.UniqueName(string, int)"/>, so a journey can run repeatedly
-/// against a database that outlives the test process. <see cref="CsmsOperatorAttribute"/> groups this
-/// attribute, so a test declares only the configuration it wants. The orchestration is
-/// <see cref="CsmsProvisioning"/> over the Data provisioners; the route stays the product's front
-/// door. Provisioning runs before every other setup attribute (<c>Order</c> -100), because a login
-/// needs the account this attribute creates.
+/// Provisions this test's isolated operator, with names from
+/// <see cref="ProtoExecutionContext.UniqueName(string, int)"/>, so a journey can run repeatedly against
+/// a database that outlives the test process.
 /// </summary>
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, Inherited = true)]
 public sealed class CsmsOperatorProvisioningAttribute : ProtoAttribute
@@ -43,10 +38,8 @@ public sealed class CsmsOperatorProvisioningAttribute : ProtoAttribute
 }
 
 /// <summary>
-/// The operator a test acts as: a tenant with its machine credential, tariff, station and operator
-/// admin account. One declaration reads as the test's configuration; the provisioning itself stays a
-/// plain attribute (<see cref="CsmsOperatorProvisioningAttribute"/>) with the parameters passed
-/// through this composite's constructor.
+/// The operator a test acts as, as one declaration; the provisioning itself is a plain attribute with
+/// the parameters passed through this composite's constructor.
 /// </summary>
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, Inherited = true)]
 public sealed class CsmsOperatorAttribute(int connectorCount = 2) : ProtoCompositeAttribute

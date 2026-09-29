@@ -7,12 +7,7 @@ using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
 
 /// <summary>
-/// The stubs the notification journeys put on the per-run target fakes. Parallel tests share those
-/// fakes, so the stubs are registered on the raw server with explicit priorities instead of the
-/// facade's path stubs: an accepting catch-all sits at a low priority, a rejection for one entity's
-/// notifications sits above it and matches the body's session id, and no registration order can
-/// change which one answers a request. The entity-keyed rejection is what lets a fault journey run
-/// beside the notification journeys without touching their deliveries.
+/// Per-run target stubs with explicit priorities, so parallel tests cannot change which stub answers.
 /// </summary>
 public static class NotificationTargetStubs
 {

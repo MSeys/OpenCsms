@@ -7,7 +7,7 @@ using System.Text.Json;
 using OpenCsms.Application.Ports;
 using OpenCsms.Protocol.Ocpp;
 
-/// <summary>An OCPP call this gateway can answer with a call error instead of a result.</summary>
+/// <summary>The call error that answers a gateway call the CSMS refuses.</summary>
 public sealed class OcppCallException(string errorCode, string description) : Exception(description)
 {
     /// <summary>The OCPP error code that answers the call.</summary>
@@ -17,8 +17,8 @@ public sealed class OcppCallException(string errorCode, string description) : Ex
 /// <summary>
 /// One connected charge point. The gateway's receive loop routes incoming frames here: calls are
 /// dispatched by <see cref="OcppGateway"/>, and the answers to calls this server started resolve the
-/// pending <see cref="CallAsync"/> that is waiting for them. One connection is one conversation - the
-/// send gate serializes frames, and the pending table correlates server calls by message id.
+/// call that is waiting for them. One connection is one conversation - the send gate serializes
+/// frames, and the pending table correlates server calls by message id.
 /// </summary>
 public sealed class ChargePointConnection(string chargePointId, WebSocket socket) : IAsyncDisposable, IChargePointConnection
 {
@@ -62,12 +62,8 @@ public sealed class ChargePointConnection(string chargePointId, WebSocket socket
         }
     }
 
-    /// <summary>
-    /// Sends a server-initiated call and waits for the charge point's result. A call error and a shape
-    /// that cannot be read both throw, so the operator sees the device's own answer; a connection
-    /// disposed under the wait throws <see cref="ChargePointConnectionLostException"/> instead of a
-    /// bare cancellation.
-    /// </summary>
+    // A call error and an unreadable shape both throw, so the operator sees the device's own answer;
+    // a connection disposed under the wait raises the lost-connection error instead of a bare cancel.
     private async Task<T> CallAsync<T>(string action, object payload, TimeSpan timeout, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(action);
@@ -92,8 +88,8 @@ public sealed class ChargePointConnection(string chargePointId, WebSocket socket
             }
             catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
             {
-                // Disposing the connection cancels every pending call; the socket went away - a
-                // reconnect replaced this connection, or it closed - so no answer can arrive on it.
+                // Disposing the connection cancels every pending call: no answer can arrive on a
+                // socket that a reconnect already replaced.
                 throw new ChargePointConnectionLostException(ChargePointId, exception);
             }
 
@@ -142,7 +138,7 @@ public sealed class ChargePointConnection(string chargePointId, WebSocket socket
         return OcppTranslator.ToAuthorization(answer.IdTagInfo.Status);
     }
 
-    /// <summary>Closes the socket politely; a charge point that is already gone needs no reason.</summary>
+    /// <summary>Closes the socket; a charge point that is already gone needs no reason.</summary>
     public async ValueTask CloseAsync(string reason, CancellationToken cancellationToken = default)
     {
         try

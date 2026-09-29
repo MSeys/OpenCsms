@@ -6,8 +6,10 @@ status and coverage; this file is the short contract for working here.
 ## Layering
 
 The solution is concentric and a project depends only inward:
-`Domain` ← `Application` ← `Infrastructure` / `Protocol.Ocpp` / `Api` / `Billing.Worker`.
-`Contracts` (integration events, API DTOs) sits on the side. Do not add a second mechanism for
+`Domain` ← `Application` ← `Infrastructure` / `Protocol.Ocpp` / `Api` / `Billing.Worker` /
+`Notification.Worker`. `Contracts` (integration events, API DTOs) sits on the side; `AppHost`
+declares the topology outside the product layers and the `Dashboard` is a TypeScript SPA the API
+serves. Do not add a second mechanism for
 something a layer already owns.
 
 ## Comments

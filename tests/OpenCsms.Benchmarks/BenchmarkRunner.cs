@@ -56,16 +56,8 @@ public sealed class BenchmarkHostedService(IHostApplicationLifetime lifetime) : 
 }
 
 /// <summary>
-/// The OpenCSMS benchmark: a seeded run of real charging journeys on the product, measured against
-/// the same application behind a raw <see cref="WebApplicationFactory{TEntryPoint}"/>. One run
-/// reports the per-test overhead (lifecycle, context and tracing), the suite startup through the
-/// first completed request with tracing on and off, and the journey's own numbers; a journey run
-/// with tracing on leaves the trace file the trace-size table reads. The numbers are written as
-/// JSON and Markdown under <c>artifacts/benchmarks/&lt;timestamp&gt;/</c>.
-///
-/// The app is the product itself: the same API entry point, the billing worker host and the real
-/// PostgreSQL and RabbitMQ addresses from the environment. Provisioning goes through the REST front
-/// door like the suite's does, and nothing reaches into the store directly.
+/// Benchmarks real charging journeys against the raw factory baseline. Numbers go to JSON and Markdown
+/// under <c>artifacts/benchmarks</c>.
 /// </summary>
 public static class BenchmarkRunner
 {

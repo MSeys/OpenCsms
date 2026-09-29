@@ -67,6 +67,7 @@ public sealed class Tariff
         IdleGracePeriod = idleGracePeriod;
     }
 
+    /// <summary>A tariff that is priced, in a currency code, for one tenant.</summary>
     public static Tariff Create(
         string tenantId,
         string name,

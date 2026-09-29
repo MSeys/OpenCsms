@@ -9,10 +9,8 @@ using OpenCsms.Infrastructure.Messaging;
 using OpenCsms.Infrastructure.Notifications;
 
 /// <summary>
-/// Consumes <c>billing.failed</c> - the billing worker's report that a session could not be billed -
-/// and pushes it to the operator's alerting target, so a customer who will never get an invoice is
-/// visible. Delivery failures ride the shared consumer loop: three in-process retries, then the
-/// notification is dead-lettered. Without a configured failure base address the consumer stays idle.
+/// Pushes <c>billing.failed</c> to the operator's alerting target. Without a configured failure base
+/// address the consumer stays idle.
 /// </summary>
 public sealed class BillingFailedNotificationConsumer(
     IServiceScopeFactory scopeFactory,

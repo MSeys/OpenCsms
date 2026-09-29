@@ -21,7 +21,6 @@ public static class ApplicationServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        // The catalog.
         services.AddScoped<TariffRegistration>();
         services.AddScoped<TariffEditing>();
         services.AddScoped<StationRegistration>();
@@ -29,26 +28,22 @@ public static class ApplicationServiceCollectionExtensions
         services.AddScoped<StationReads>();
         services.AddScoped<ConnectorReads>();
 
-        // The charge-point calls the OCPP gateway routes into the application.
         services.AddScoped<StationSeen>();
         services.AddScoped<ConnectorStatusReport>();
         services.AddScoped<TransactionStart>();
         services.AddScoped<TransactionMeterValues>();
         services.AddScoped<TransactionStop>();
 
-        // The sessions.
         services.AddScoped<SessionStart>();
         services.AddScoped<SessionMeterValues>();
         services.AddScoped<SessionEnding>();
         services.AddScoped<SessionReads>();
 
-        // The operator commands and the billing use cases.
         services.AddScoped<OperatorCommands>();
         services.AddScoped<InvoiceIssuance>();
         services.AddScoped<InvoiceReads>();
         services.AddScoped<MonthlyInvoiceExport>();
 
-        // The accounts and the tenants that hold machine credentials.
         services.AddScoped<UserRegistration>();
         services.AddScoped<UserAuthentication>();
         services.AddScoped<TenantRegistration>();

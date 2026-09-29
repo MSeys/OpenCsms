@@ -2,9 +2,11 @@
 param()
 
 # The showpiece: the idle-fee-after-a-tariff-change journey that recorded a real regression before
-# the session copied its tariff at start. The journey passes now and runs in the suite gate; this
-# command runs it alone and copies its fresh trace beside the historical failing one, which stays
-# untouched as the evidence the docs link to (artifacts/showpiece/opencsms.prototrace).
+# the session copied its tariff at start. The journey passes now and runs in the container and
+# configured gates; this command runs it alone and copies its fresh trace beside the historical
+# failing one, which stays untouched as the evidence the docs link to
+# (artifacts/showpiece/opencsms.prototrace). Published and topology legs do not report it; see the
+# suite docs for the current accounting.
 #
 # The fresh trace lands under artifacts/showpiece/opencsms-rerun.prototrace; the run's own output is
 # beside it in opencsms-showpiece.log. It starts its own PostgreSQL and RabbitMQ containers like the

@@ -1,7 +1,8 @@
 # The optional staging smoke: published mode against a stack someone else runs.
 #
 # Honest state: no staging target exists, so this workflow is authored and guarded and has never
-# run - nothing here claims a staging result. It is dispatch-only because it needs both a target
+# run - nothing here claims a staging result. Delete this note when the first hosted run lands.
+# It is dispatch-only because it needs both a target
 # and five repository secrets, and dispatching it without them fails in the first step with the
 # names of the missing secrets.
 #
@@ -78,7 +79,7 @@ jobs:
       # The browser journeys carry the suite's dashboard-build gate, which reads the local bundle
       # even when the dashboard they drive is the staging one; building it here runs them instead
       # of skipping them. `eng/run-suite.ps1` builds the dashboard before every mode for the same
-      # reason. ProtoTest:Seed=off keeps the smoke from writing the seeded volume into a shared
+      # reason. ProtoTest__Seed=off keeps the smoke from writing the seeded volume into a shared
       # staging database; the seeded journeys skip with it, as the README documents. The log goes
       # to the same artifacts/gates name the other legs use, with a published-staging prefix so it
       # can never be mistaken for the local rehearsal's log.

@@ -7,18 +7,18 @@ framework repository.
 It is deliberately a product, not a demo around a feature: a REST API, PostgreSQL, a billing worker on
 RabbitMQ, a notification worker that pushes invoices and billing failures to external HTTP targets,
 and the tests that prove a charging session becomes an invoice. ProtoTest is the only test
-framework. Every framework gap this app pulled is written down here rather than hidden.
+framework. Framework gaps this app exposes are recorded in the Gap log below.
 
 ## What this proves
 
-The point is the *one suite, many environments* promise, without `if` statements in test setup:
+One suite runs in every mode with the same Setup: each target declares its providers in order, and the first one the environment makes available serves it:
 
 | Mode | API | PostgreSQL & RabbitMQ | State |
 | --- | --- | --- | --- |
 | In-process + Testcontainers | hosted by the suite (`UseInProcess`) | started by the suite (Testcontainers) | 75/75 green, 0 skipped, fresh containers, seven Chromium journeys and the showpiece journey included |
 | Configured | hosted by the suite | an environment you provide through configuration; the suite's containers skip | 75/75, 0 skipped, against one persistent database migrated and backfilled from an earlier schema |
-| Published, locally rehearsed (`-Mode published`) | a real API process at `ProtoTest:Applications:Csms:BaseUrl`; the real `OpenCsms.Billing.Worker` consumes and the real `OpenCsms.Notification.Worker` idles without targets | running `opencsms-postgres` / `opencsms-rabbitmq` containers addressed by the configured keys | the clock- and in-process-gated journeys skip, each worker process runs once; no staging target exists yet |
-| Container topology (`-Mode topology`) | the AppHost's API project resource at its published address (it also serves the dashboard) | the AppHost's PostgreSQL and RabbitMQ containers | the same clock- and in-process-gated journeys skip; the AppHost runs the product's processes |
+| Published, locally rehearsed (`-Mode published`) | a real API process at `ProtoTest:Applications:Csms:BaseUrl`; the real `OpenCsms.Billing.Worker` consumes and the real `OpenCsms.Notification.Worker` idles without targets | running `opencsms-postgres` / `opencsms-rabbitmq` containers addressed by the configured keys | 61 passed, 13 skipped of 74: the seven clock journeys, the two outbox substitutions and the four notification journeys skip, and the showpiece journey does not run there and is not reported skipped; no staging target exists yet |
+| Container topology (`-Mode topology`) | the AppHost's API project resource at its published address (it also serves the dashboard) | the AppHost's PostgreSQL and RabbitMQ containers | 61 passed, 13 skipped of 74: the seven clock journeys, the two outbox substitutions and the four notification journeys skip, and the showpiece journey does not run there and is not reported skipped |
 
 The suite's `Setup` is the same code in every mode: each target - the store, the broker, the API
 with its billing worker, the dashboard application - declares its providers in order, and the first
@@ -56,8 +56,8 @@ the persistent database, 56/56 domain rules). [COVERAGE.md](COVERAGE.md) records
 asserts today and the areas that are still untested.
 
 **Layering.** The solution is concentric layers, and a project depends only inward:
-`Domain` ← `Application` ← `Infrastructure` / `Protocol.Ocpp` / `Api` / `Worker`, with `Contracts`
-on the side.
+`Domain` ← `Application` ← `Infrastructure` / `Protocol.Ocpp` / `Api` / `Billing.Worker` /
+`Notification.Worker`, with `Contracts` on the side and `AppHost` outside the product layers.
 
 | Project | Owns |
 | --- | --- |
@@ -116,8 +116,9 @@ assuming either.
 The operator dashboard is a Vue 3.5 + vue-router + Vite SPA in `src/OpenCsms.Dashboard`, served by
 the API at the site root from `Csms:Ui:Path` (default `../OpenCsms.Dashboard/dist`, relative to the
 API's content root) with a static-files pass and an SPA fallback: `/api`, `/ocpp`, `/healthz` and
-`/swagger` keep their namespaces, so an unmatched path under them is a 404, never a page. Without a
-build the dashboard routes answer a "not built" page and everything else keeps working.
+`/swagger` keep their namespaces, so an unmatched path under them answers 404 instead of the SPA page. Without a
+build the dashboard routes answer a "not built" page and everything else keeps working. The
+dashboard folder carries its own [development notes](src/OpenCsms.Dashboard/README.md).
 `eng/build-dashboard.ps1` runs `npm ci` + `npm run build` (vue-tsc + vite); `eng/run-suite.ps1`
 builds it before every suite run, so the browser journeys always test a fresh bundle.
 
@@ -244,32 +245,31 @@ pwsh eng/run-benchmark.ps1
 ```
 
 It writes `artifacts/benchmarks/<timestamp>/results.json` and `results.md`. A run of the harness
-(2026-09-28, Windows 11 / X64 / 16 cores / 31 GiB, .NET 8.0.31, 1,000 iterations and 1,000 seeded
-journeys) measured:
+(Windows 11 / X64 / 16 cores / 31 GiB, .NET 8.0.31, 1,000 iterations and 1,000 seeded journeys)
+measured:
 
 | Comparison | ProtoTest | Raw WebApplicationFactory | Where ProtoTest loses |
 | --- | ---: | ---: | --- |
-| One `GET /healthz` through a full test cycle, tracing on | 43.5 ms median | 5.0 ms median | ~8.7x per test |
-| The same test, tracing off | 46.7 ms median | 5.0 ms median | ~9.3x per test |
-| Suite startup through the first completed request | 178.7 ms | 78.1 ms | ~2.3x |
+| One `GET /healthz` through a full test cycle, tracing on | 35.2 - 36.2 ms median | 4.8 - 5.0 ms median | ~7x per test |
+| The same test, tracing off | 30.7 - 32.4 ms median | 4.8 - 5.0 ms median | ~6x per test |
+| Suite startup through the first completed request | 156 - 179 ms | 73 - 83 ms | ~2.1x |
 
-Tracing itself is not the cost: with it off the same test measured about the same (46.7 ms vs.
-43.5 ms, within run variation). Most of the per-test difference is the suite's own broker taps, which
+Tracing itself is not the cost: with it off the same test measured about the same (about 31-32 ms vs.
+35-36 ms, within run variation). Most of the per-test difference is the suite's own broker taps, which
 prepare and release inside every test (the run's phase profile measures about 30 of 36 ms there);
 ProtoTest's lifecycle and context wrapper is a few milliseconds. The raw baseline builds one factory
 and a client per test, so it pays for the client and the request, and it never opens a broker
 consumer. The raw baseline is the honest floor: an integration test that wants a fresh host per test
-pays more than either number. The 1,000-journey run took 96.1 s (87.7 ms median per journey,
-p95 140.8 ms) and left a 41.2 MB trace; the same run at 100 journeys left 4.1 MB, so the trace grows
-linearly with the test count, about 41 KB per journey.
+pays more than either number. The 1,000-journey run left a 38.8 MB trace with a 49.3 to 54.8 ms
+journey median; the same run at 100 journeys left 4.1 MB, so the trace grows linearly with the test
+count, about 39 KB per journey.
 
-The showpiece is a real regression that has been fixed: `IdleFeeAfterTariffChange` starts a session,
-advances the test clock five hours, reprices the tariff to drop the idle fee while the session is
-open, and then ends it. Billing used to read the tariff when the worker processed `session.ended`,
-so the stored invoice billed 13.60 where the session's own tariff promised 20.30; the failing trace
-is kept at `artifacts/showpiece/opencsms.prototrace` as the historical evidence. The session now
-copies the tariff's terms when it starts, so the repricing never reaches it: the journey asserts
-20.30 and runs in the container mode. `pwsh eng/run-showpiece.ps1` reruns it alone and writes the
+`IdleFeeAfterTariffChange` pins the tariff-snapshot rule: a session that starts under one tariff
+and ends after a reprice bills the tariff it started under (20.30, not 13.60). The pre-fix failing
+trace is kept at `artifacts/showpiece/opencsms.prototrace`. The session copies the tariff's terms
+when it starts, so the repricing never reaches it: the journey asserts 20.30 and runs in the
+container and configured modes. The published and topology legs do not report it (see the mode
+table above). `pwsh eng/run-showpiece.ps1` reruns it alone and writes the
 fresh trace to `artifacts/showpiece/opencsms-rerun.prototrace`, leaving the historical one untouched.
 
 ## Gap log
@@ -300,8 +300,9 @@ The honest state of the product and the suite, including what is not built yet.
 - **Container topology is verified.** `eng/run-suite.ps1 -Mode topology` selects `OpenCsms.AppHost`
   (it starts only while selected), which runs the API project (serving the dashboard too), the
   billing worker and the notification worker as real processes beside fresh PostgreSQL and RabbitMQ
-  containers: the clock- and in-process-gated journeys skip (the two outbox substitutions and the
-  four notification journeys). The AppHost's notification
+  containers: 61 passed, 13 skipped of 74 (the seven clock journeys, the two outbox substitutions
+  and the four notification journeys); the showpiece journey does not run there and is not reported
+  skipped. The AppHost's notification
   worker is wired to the product's own target keys, which the suite leaves unset there, so it idles
   with the product's log line; the notification journeys themselves assert the injected run clock and an
   in-process application, which real processes do not have, so they stay skipped rather than being
@@ -337,21 +338,30 @@ The honest state of the product and the suite, including what is not built yet.
   reaches only its own tenant's rows. The dashboard's reads, commands and export stay
   cookie-authenticated, and the OCPP gateway and public status routes are unchanged.
 
+## Prerequisites
+
+.NET 8 and 10 SDKs, Node 22, and a container runtime. The browser journeys need Chromium with its
+system libraries; build the suite once, then install it the way CI does:
+
+```bash
+pwsh tests/OpenCsms.Suite/bin/Release/net8.0/playwright.ps1 install --with-deps chromium
+```
+
 ## Running
 
 ```bash
-dotnet test
+pwsh eng/run-suite.ps1 -Mode container
 ```
 
-On a machine with a container runtime the suite starts PostgreSQL and RabbitMQ itself. Without one,
-provide the environment through configuration; all three declared keys must be set for the suite's
-containers to skip:
+On a machine with a container runtime this builds the dashboard, then runs the whole suite. The
+suite starts PostgreSQL and RabbitMQ itself. Without a runtime, provide the environment through
+configuration; all three declared keys must be set for the suite's containers to skip:
 
 ```bash
 export ConnectionStrings__Csms="Host=localhost;Database=opencsms;Username=opencsms;Password=opencsms"
 export Messaging__RabbitMq__ConnectionString="amqp://guest:guest@localhost:5672"
 export ProtoTest__Messaging__RabbitMq__ConnectionString="amqp://guest:guest@localhost:5672"
-dotnet test
+pwsh eng/run-suite.ps1 -Mode configured
 ```
 
 The first key is the product's database, the second the product's broker, and the third the address
@@ -386,8 +396,9 @@ docker run -d --name opencsms-postgres -e POSTGRES_USER=opencsms -e POSTGRES_PAS
 docker run -d --name opencsms-rabbitmq -p 5672:5672 rabbitmq:3-alpine
 ```
 
-To point the same suite at a stack someone else runs, export those five keys and run `dotnet test`
-yourself: the suite's provider chains step aside, the environment runs the workers and its clock,
+To point the same suite at a stack someone else runs, export those five keys, build the dashboard
+with `pwsh eng/build-dashboard.ps1`, and run `dotnet test` yourself: the suite's provider chains
+step aside, the environment runs the workers and its clock,
 and the clock-dependent journeys skip. The script writes the suite log under
 `artifacts/gates/opencsms-published-<timestamp>.log`, with each process's output in
 `opencsms-published-<timestamp>-<name>.log` beside it.
@@ -411,7 +422,7 @@ Each job builds the dashboard, installs Chromium with its system libraries, and 
 run log from `artifacts/gates/`.
 
 This repository has no remote yet, so no workflow has run on GitHub; the evidence is the local
-rehearsal of the container and topology legs. A hosted run also needs the 1.1
+rehearsal of each leg. Delete this note when the first hosted run lands. A hosted run also needs the 1.1
 ProtoTest packages reachable, because `NuGet.config` maps `ProtoTest.*` to the sibling checkout's
 feed until 1.1 is published (see [Packages](#packages)). The staging smoke has no target yet: a
 dispatch without all five secrets fails with the missing key names before anything starts.

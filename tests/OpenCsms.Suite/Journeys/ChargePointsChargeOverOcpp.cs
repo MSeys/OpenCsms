@@ -21,20 +21,9 @@ using BillingWorker = OpenCsms.Billing.Worker.Program;
 using CsmsApi = OpenCsms.Api.Program;
 
 /// <summary>
-/// The gateway journeys, through the framework's device stack: a charge point reaches the in-process
-/// API over <c>/ocpp/{chargePointId}</c>, boots, reports its connector, and runs one metered session to
-/// its stop. The CSMS ends up with the same session the REST API would have written, and the billing
-/// worker still sees its <c>session.ended</c> event, because the gateway publishes through the same
-/// session-ending helper the REST endpoint uses. A second journey proves the other direction: the
-/// operator's remote start and stop reach the connected charge point and wait for its own answer, and
-/// the journeys after it pin the failure branches that wait can end in - not connected (409), a device
-/// that refuses the call (502), a device that answers its own authorization decision such as Blocked
-/// (200), and no answer within the configured timeout (504) - without changing the session the command
-/// addressed. The
-/// idle-fee journeys then bend the clock: a car that overstays the tariff's grace period pays per
-/// started hour, and one that unplugs inside the grace period does not. The last journey runs two
-/// sessions on one connector, whose register keeps counting across them, and proves each session bills
-/// only the energy it added on top of the register it started from.
+/// The gateway journeys prove a charge point's own run writes the same session and invoice REST does,
+/// and that the operator's remote commands wait for the device's answer. The idle-fee and
+/// second-session journeys bend the clock instead of sleeping.
 /// </summary>
 [Application(CsmsTargets.Api)]
 [CsmsOperator]
@@ -51,7 +40,6 @@ public sealed class ChargePointsChargeOverOcpp
         var op = Proto.Context.Resolve<CsmsOperator>();
         var charger = Proto.Context.Devices(CsmsTargets.Chargers).For<AcCharger>(op.ChargePointId);
 
-        // Act: the charge point does what a real one does at a connector.
         var boot = await charger.BootAsync();
         var heartbeat = await charger.HeartbeatAsync();
         await charger.ReportStatusAsync(1, ConnectorStatus.Preparing);
