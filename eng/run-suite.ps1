@@ -22,6 +22,19 @@ New-Item -ItemType Directory -Path $gatesRoot -Force | Out-Null
 $timestamp = (Get-Date).ToString("yyyyMMdd-HHmmss")
 $publishedProcesses = @()
 
+function Clear-AspireSelection {
+    # The mode names the environment: an exported AppHost selector from another leg would silently
+    # run the AppHost while this mode claims something else, so a mode that does not select the
+    # AppHost clears the selector first. The global key and every per-resource key go.
+    Remove-Item Env:ProtoTest__Aspire__Enabled -ErrorAction SilentlyContinue
+    $resourceKeys = @(Get-ChildItem Env: |
+        Where-Object { $_.Name -like "ProtoTest__Aspire__Resources__*__Enabled" } |
+        ForEach-Object Name)
+    foreach ($key in $resourceKeys) {
+        Remove-Item "Env:$key" -ErrorAction SilentlyContinue
+    }
+}
+
 function Start-RehearsalProcess {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -56,6 +69,12 @@ function Stop-RehearsalProcess {
     $Process.WaitForExit(10000) | Out-Null
 }
 
+if ($Mode -eq "container" -or $Mode -eq "configured") {
+    # container and configured run the suite's own in-process/container chain: clear what another
+    # mode's shell exports so the mode cannot silently measure the AppHost instead.
+    Clear-AspireSelection
+}
+
 if ($Mode -eq "configured") {
     $required = @(
         "ConnectionStrings__Csms",
@@ -70,8 +89,9 @@ if ($Mode -eq "configured") {
 
 if ($Mode -eq "topology") {
     # The AppHost's own resources serve the store and the broker, so the run must not inherit a
-    # published environment's keys from the shell: clear what a configured rehearsal exports, and
-    # select the AppHost with the integration's one key.
+    # published environment's keys or another leg's selection from the shell: clear what a configured
+    # rehearsal exports, clear any AppHost selector, and select every AppHost resource with the
+    # integration's one key.
     foreach ($key in @(
         "ConnectionStrings__Csms",
         "Messaging__RabbitMq__ConnectionString",
@@ -82,6 +102,7 @@ if ($Mode -eq "topology") {
         Remove-Item "Env:$key" -ErrorAction SilentlyContinue
     }
 
+    Clear-AspireSelection
     $env:ProtoTest__Aspire__Enabled = "true"
 }
 
@@ -118,7 +139,8 @@ Published mode needs the running '$container' container. Start the rehearsal sta
 
     # A shell may carry keys from another leg (the AppHost selector, a staging target, a seed
     # switch); the rehearsal fixes its own environment so the same command measures the same stack.
-    Remove-Item Env:ProtoTest__Aspire__Enabled, Env:ProtoTest__Seed,
+    Clear-AspireSelection
+    Remove-Item Env:ProtoTest__Seed,
         Env:Notifications__InvoiceReadyBaseUrl, Env:Notifications__BillingFailureBaseUrl `
         -ErrorAction SilentlyContinue
 
