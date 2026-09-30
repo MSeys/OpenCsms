@@ -43,3 +43,12 @@ in-process.
 The ProtoTest facts live in the ProtoTest checkout's private records repository under
 `assets/internal/records/facts/` (`architecture.md`, `recipes.md`, `gotchas.md`). Read the owning
 file before changing behavior.
+
+## Packages
+
+The suite consumes ProtoTest packages from nuget.org; the committed `NuGet.config` is the published
+shape and the pins are the released version. A maintainer working before a ProtoTest release lands
+copies the gitignored `NuGet.local.config` beside it, pointing at the sibling checkout's feed packed
+by `../ProtoTest/eng/pack.ps1`; `Directory.Build.props` sets `RestoreConfigFile` to it when the file
+exists, so every `dotnet` command uses it and the committed config stays clean. Delete the copy once
+the release is on nuget.org. Nothing user-facing mentions this override.

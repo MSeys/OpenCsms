@@ -5,9 +5,9 @@
 #
 # Until this repository has a remote, no workflow has run on GitHub; the evidence
 # for the container leg is a local rehearsal of the same command. Delete this note when the first
-# hosted run lands. A hosted run additionally needs
-# the 1.1 ProtoTest packages reachable: NuGet.config maps ProtoTest.* to the sibling checkout's
-# local feed while 1.1 is under development (README, "Packages"), and nuget.org carries 1.0.x only.
+# hosted run lands. A hosted run restores from the committed NuGet.config, so it additionally needs
+# ProtoTest 1.1.0 on nuget.org (README, "Packages"); until then only a checkout with the gitignored
+# NuGet.local.config restores, and nuget.org carries 1.0.x only.
 
 name: CI
 

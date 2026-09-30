@@ -11,4 +11,9 @@
     <Version>0.1.0</Version>
   </PropertyGroup>
 
+  <!-- Pre-release package override; see AGENTS.md. -->
+  <PropertyGroup Condition="'$(RestoreConfigFile)' == '' and Exists('$(MSBuildThisFileDirectory)NuGet.local.config')">
+    <RestoreConfigFile>$(MSBuildThisFileDirectory)NuGet.local.config</RestoreConfigFile>
+  </PropertyGroup>
+
 </Project>

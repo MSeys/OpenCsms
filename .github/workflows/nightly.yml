@@ -6,9 +6,8 @@
 #
 # Until this repository has a remote, no workflow has run on GitHub; the evidence
 # for the topology leg is a local rehearsal of the same command. Delete this note when the first
-# hosted run lands. A hosted run additionally needs
-# the 1.1 ProtoTest packages reachable (NuGet.config maps ProtoTest.* to the sibling checkout's
-# local feed while 1.1 is under development; README, "Packages"), and scheduled workflows only run
+# hosted run lands. A hosted run restores from the committed NuGet.config, so it needs ProtoTest
+# 1.1.0 on nuget.org (README, "Packages"), and scheduled workflows only run
 # on the default branch once one exists.
 
 name: Nightly topology

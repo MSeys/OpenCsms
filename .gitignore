@@ -18,3 +18,4 @@ src/OpenCsms.Dashboard/dist/
 ## Local overrides
 appsettings.Development.json
 .env
+NuGet.local.config

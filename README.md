@@ -185,7 +185,8 @@ rows; the journey sums both sides.
 fee), composed from the product's own application services in-process against the run's database.
 The worker and the broker are not involved: issuance runs with its events dropped. The seeded
 tariff's name is the idempotency marker: a rerun against a database that already holds it stores
-nothing, so configured-mode reruns share one seed. Per-test prerequisites still go through the
+nothing, so configured-mode reruns share one seed. `ProtoTest__Seed=off` makes the run store
+no seed and skips the six seeded journeys (see COVERAGE.md). Per-test prerequisites still go through the
 REST front door: the same routes, with the mechanics on `ProtoTest.Data` provisioners; the seed
 is volume only.
 
@@ -340,7 +341,8 @@ The honest state of the product and the suite, including what is not built yet.
 
 ## Prerequisites
 
-.NET 8 and 10 SDKs, Node 22, and a container runtime. The browser journeys need Chromium with its
+The .NET 10 SDK with the .NET 8 runtime (the 8.0.x SDK installs both; CI installs both SDKs),
+Node 22 or later, and a container runtime. The browser journeys need Chromium with its
 system libraries; build the suite once, then install it the way CI does:
 
 ```bash
@@ -357,12 +359,14 @@ On a machine with a container runtime this builds the dashboard, then runs the w
 suite starts PostgreSQL and RabbitMQ itself. Without a runtime, provide the environment through
 configuration; all three declared keys must be set for the suite's containers to skip:
 
-```bash
-export ConnectionStrings__Csms="Host=localhost;Database=opencsms;Username=opencsms;Password=opencsms"
-export Messaging__RabbitMq__ConnectionString="amqp://guest:guest@localhost:5672"
-export ProtoTest__Messaging__RabbitMq__ConnectionString="amqp://guest:guest@localhost:5672"
+```powershell
+$env:ConnectionStrings__Csms = "Host=localhost;Database=opencsms;Username=opencsms;Password=opencsms"
+$env:Messaging__RabbitMq__ConnectionString = "amqp://guest:guest@localhost:5672"
+$env:ProtoTest__Messaging__RabbitMq__ConnectionString = "amqp://guest:guest@localhost:5672"
 pwsh eng/run-suite.ps1 -Mode configured
 ```
+
+(On bash the same three keys are `export`ed with the same names and values.)
 
 The first key is the product's database, the second the product's broker, and the third the address
 ProtoTest's own messaging tap uses.
@@ -396,7 +400,7 @@ docker run -d --name opencsms-postgres -e POSTGRES_USER=opencsms -e POSTGRES_PAS
 docker run -d --name opencsms-rabbitmq -p 5672:5672 rabbitmq:3-alpine
 ```
 
-To point the same suite at a stack someone else runs, export those five keys, build the dashboard
+To point the same suite at a stack someone else runs, set those five keys in the environment, build the dashboard
 with `pwsh eng/build-dashboard.ps1`, and run `dotnet test` yourself: the suite's provider chains
 step aside, the environment runs the workers and its clock,
 and the clock-dependent journeys skip. The script writes the suite log under
@@ -422,16 +426,15 @@ Each job builds the dashboard, installs Chromium with its system libraries, and 
 run log from `artifacts/gates/`.
 
 This repository has no remote yet, so no workflow has run on GitHub; the evidence is the local
-rehearsal of each leg. Delete this note when the first hosted run lands. A hosted run also needs the 1.1
-ProtoTest packages reachable, because `NuGet.config` maps `ProtoTest.*` to the sibling checkout's
-feed until 1.1 is published (see [Packages](#packages)). The staging smoke has no target yet: a
+rehearsal of each leg. Delete this note when the first hosted run lands. A hosted run restores
+from the committed `NuGet.config`, so it needs ProtoTest 1.1.0 on nuget.org (see [Packages](#packages)).
+The staging smoke has no target yet: a
 dispatch without all five secrets fails with the missing key names before anything starts.
 
 ## Packages
 
-This repository consumes ProtoTest packages. While 1.1 is under development it resolves them from a
-local feed produced by `eng/pack.ps1` in a sibling ProtoTest checkout (see `NuGet.config`); once 1.1 is
-published it resolves them from nuget.org. [COVERAGE.md](COVERAGE.md#prototest-integration-matrix)
+This repository consumes ProtoTest packages from nuget.org (see `NuGet.config`); the pins are
+already `1.1.0`. [COVERAGE.md](COVERAGE.md#prototest-integration-matrix)
 records which of them the suite exercises and the reason recorded for each one the product's shape
 does not justify.
 

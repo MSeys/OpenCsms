@@ -23,23 +23,23 @@
     <PackageReference Include="NUnit" Version="4.6.1" />
     <PackageReference Include="NUnit.Analyzers" Version="4.3.0" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
-    <PackageReference Include="ProtoTest.AspNetCore" Version="1.1.0-alpha.1" />
-    <PackageReference Include="ProtoTest.Aspire" Version="1.1.0-alpha.1" />
-    <PackageReference Include="ProtoTest.Data" Version="1.1.0-alpha.1" />
-    <PackageReference Include="ProtoTest.Devices" Version="1.1.0-alpha.1" />
-    <PackageReference Include="ProtoTest.Devices.WebSocket" Version="1.1.0-alpha.1" />
-    <PackageReference Include="ProtoTest.Devices.WebSocket.AspNetCore" Version="1.1.0-alpha.1" />
-    <PackageReference Include="ProtoTest.Hosting" Version="1.1.0-alpha.1" />
-    <PackageReference Include="ProtoTest.Messaging.RabbitMq" Version="1.1.0-alpha.1" />
-    <PackageReference Include="ProtoTest.Messaging.RabbitMq.Testcontainers" Version="1.1.0-alpha.1" />
-    <PackageReference Include="ProtoTest.NUnit" Version="1.1.0-alpha.1" />
-    <PackageReference Include="ProtoTest.Reporting" Version="1.1.0-alpha.1" />
-    <PackageReference Include="ProtoTest.Rest" Version="1.1.0-alpha.1" />
-    <PackageReference Include="ProtoTest.Sheets" Version="1.1.0-alpha.1" />
-    <PackageReference Include="ProtoTest.Sql.Testcontainers" Version="1.1.0-alpha.1" />
-    <PackageReference Include="ProtoTest.Web" Version="1.1.0-alpha.1" />
-    <PackageReference Include="ProtoTest.Web.Playwright" Version="1.1.0-alpha.1" />
-    <PackageReference Include="ProtoTest.WireMock" Version="1.1.0-alpha.1" />
+    <PackageReference Include="ProtoTest.AspNetCore" Version="1.1.0" />
+    <PackageReference Include="ProtoTest.Aspire" Version="1.1.0" />
+    <PackageReference Include="ProtoTest.Data" Version="1.1.0" />
+    <PackageReference Include="ProtoTest.Devices" Version="1.1.0" />
+    <PackageReference Include="ProtoTest.Devices.WebSocket" Version="1.1.0" />
+    <PackageReference Include="ProtoTest.Devices.WebSocket.AspNetCore" Version="1.1.0" />
+    <PackageReference Include="ProtoTest.Hosting" Version="1.1.0" />
+    <PackageReference Include="ProtoTest.Messaging.RabbitMq" Version="1.1.0" />
+    <PackageReference Include="ProtoTest.Messaging.RabbitMq.Testcontainers" Version="1.1.0" />
+    <PackageReference Include="ProtoTest.NUnit" Version="1.1.0" />
+    <PackageReference Include="ProtoTest.Reporting" Version="1.1.0" />
+    <PackageReference Include="ProtoTest.Rest" Version="1.1.0" />
+    <PackageReference Include="ProtoTest.Sheets" Version="1.1.0" />
+    <PackageReference Include="ProtoTest.Sql.Testcontainers" Version="1.1.0" />
+    <PackageReference Include="ProtoTest.Web" Version="1.1.0" />
+    <PackageReference Include="ProtoTest.Web.Playwright" Version="1.1.0" />
+    <PackageReference Include="ProtoTest.WireMock" Version="1.1.0" />
   </ItemGroup>
 
   <ItemGroup>
