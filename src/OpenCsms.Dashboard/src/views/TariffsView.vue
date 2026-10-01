@@ -84,6 +84,7 @@ onMounted(load);
 <template>
   <section data-testid="tariffs-page">
     <PageHeader
+      eyebrow="Billing"
       title="Tariffs"
       description="What this operator charges per kilowatt-hour, per session start and per idle hour."
       testid="tariffs-title"

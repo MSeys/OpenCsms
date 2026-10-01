@@ -1,6 +1,8 @@
 <script setup lang="ts">
 defineProps<{
   title: string;
+  /** A short section label above the title, in ProtoTest's mono eyebrow style. */
+  eyebrow?: string;
   description?: string;
   testid?: string;
 }>();
@@ -9,6 +11,7 @@ defineProps<{
 <template>
   <header class="page-header">
     <div class="page-header__text">
+      <p v-if="eyebrow" class="eyebrow">{{ eyebrow }}</p>
       <h1 :data-testid="testid">{{ title }}</h1>
       <p v-if="description" class="muted">{{ description }}</p>
     </div>
@@ -32,8 +35,12 @@ defineProps<{
   max-width: 62ch;
 }
 
-.page-header__text p {
+.page-header__text .muted {
   margin-top: 5px;
+}
+
+.page-header__text .eyebrow {
+  margin-bottom: 6px;
 }
 
 .page-header__actions {

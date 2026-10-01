@@ -45,34 +45,84 @@
 }
 
 :root {
-  --oc-ink: #17232c;
-  --oc-ink-deep: #101b23;
-  --oc-muted: #5c7080;
-  --oc-faint: #8298a4;
-  --oc-paper: #eef2f1;
+  /* The ProtoTest palette: navy ink on warm paper, a blueprint header, and one accent. OpenCSMS keeps
+     its own accent, the charging green, where ProtoTest uses blueprint blue. */
+  --oc-ink: #183f5b;
+  --oc-heading: #123b58;
+  --oc-muted: #4d6576;
+  --oc-faint: #6f8695;
+  --oc-paper: #f7f5ee;
   --oc-surface: #ffffff;
-  --oc-line: #d8e2e0;
-  --oc-line-soft: #e8efed;
-  --oc-accent: #1f7a5c;
-  --oc-accent-strong: #176248;
-  --oc-accent-soft: #e4f3ec;
-  --oc-success: #1e8a5e;
-  --oc-success-soft: #e6f4ee;
-  --oc-danger: #b5432f;
-  --oc-danger-soft: #fbeae6;
-  --oc-warning: #96650f;
-  --oc-warning-soft: #f9f0dc;
-  --oc-info: #2b6cb0;
-  --oc-info-soft: #e8f0fa;
-  --oc-neutral: #64748b;
-  --oc-neutral-soft: #eef1f4;
-  --oc-radius-panel: 12px;
-  --oc-radius-control: 8px;
-  --oc-shadow-panel: 0 1px 2px rgb(16 27 35 / 5%);
+  --oc-surface-2: #f7fafc;
+  --oc-hover: #eef5f8;
+  --oc-line: rgb(18 59 88 / 14%);
+  --oc-line-soft: rgb(18 59 88 / 8%);
+  --oc-line-strong: rgb(18 59 88 / 28%);
+  --oc-accent: #17835a;
+  --oc-accent-strong: #106646;
+  --oc-accent-soft: rgb(23 131 90 / 9%);
+  --oc-accent-line: rgb(23 131 90 / 34%);
+  --oc-on-accent: #ffffff;
+  --oc-success: #17835a;
+  --oc-success-soft: rgb(23 131 90 / 9%);
+  --oc-danger: #c1444b;
+  --oc-danger-soft: rgb(193 68 75 / 9%);
+  --oc-warning: #8a600f;
+  --oc-warning-soft: rgb(138 96 15 / 10%);
+  --oc-info: #1f75a9;
+  --oc-info-soft: rgb(31 117 169 / 9%);
+  --oc-neutral: #58707f;
+  --oc-neutral-soft: rgb(18 59 88 / 6%);
+  /* The top bar is a blueprint surface in both themes, as ProtoTest's hero is. */
+  --oc-bar: #061a28;
+  --oc-bar-text: #dceaf3;
+  --oc-bar-muted: #90aec2;
+  --oc-bar-line: rgb(255 255 255 / 14%);
+  --oc-bar-grid: rgb(255 255 255 / 3%);
+  --oc-mark: #35b985;
+  --oc-radius-panel: 10px;
+  --oc-radius-control: 7px;
+  --oc-radius-chip: 4px;
+  --oc-shadow-panel: 0 1px 2px rgb(19 57 77 / 6%);
   --font-display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
   --font-ui: "Manrope", "Segoe UI", system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --tracking-eyebrow: 0.13em;
   color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --oc-ink: #dceaf3;
+    --oc-heading: #f2f8fb;
+    --oc-muted: #90aec2;
+    --oc-faint: #81a3b6;
+    --oc-paper: #061a28;
+    --oc-surface: #0d2234;
+    --oc-surface-2: #132d3e;
+    --oc-hover: #1a3548;
+    --oc-line: rgb(255 255 255 / 11%);
+    --oc-line-soft: rgb(255 255 255 / 6%);
+    --oc-line-strong: rgb(255 255 255 / 22%);
+    --oc-accent: #35b985;
+    --oc-accent-strong: #5fcf9f;
+    --oc-accent-soft: rgb(53 185 133 / 13%);
+    --oc-accent-line: rgb(53 185 133 / 42%);
+    --oc-on-accent: #04131d;
+    --oc-success: #35b985;
+    --oc-success-soft: rgb(53 185 133 / 13%);
+    --oc-danger: #e07a7a;
+    --oc-danger-soft: rgb(216 106 106 / 13%);
+    --oc-warning: #d7a84b;
+    --oc-warning-soft: rgb(215 168 75 / 13%);
+    --oc-info: #3a9fd6;
+    --oc-info-soft: rgb(22 136 191 / 14%);
+    --oc-neutral: #90aec2;
+    --oc-neutral-soft: rgb(255 255 255 / 6%);
+    --oc-bar: #04131d;
+    --oc-shadow-panel: none;
+    color-scheme: dark;
+  }
 }
 
 *,
@@ -97,6 +147,7 @@ h1,
 h2,
 h3 {
   margin: 0;
+  color: var(--oc-heading);
   font-family: var(--font-display);
   font-weight: 600;
   letter-spacing: -0.015em;
@@ -149,6 +200,14 @@ button {
   color: var(--oc-muted);
 }
 
+/* ProtoTest's section label: small mono capitals above a heading. */
+.eyebrow {
+  color: var(--oc-accent);
+  font: 500 11px/1.4 var(--font-mono);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -182,7 +241,7 @@ button {
 
 .button:hover:not(:disabled) {
   border-color: var(--oc-faint);
-  background: #f6f9f8;
+  background: var(--oc-hover);
 }
 
 .button:disabled {
@@ -193,12 +252,18 @@ button {
 .button--primary {
   border-color: var(--oc-accent);
   background: var(--oc-accent);
-  color: #fff;
+  color: var(--oc-on-accent);
 }
 
 .button--primary:hover:not(:disabled) {
   border-color: var(--oc-accent-strong);
   background: var(--oc-accent-strong);
+}
+
+.button--small {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 13px;
 }
 
 .button--quiet {
@@ -209,7 +274,7 @@ button {
 
 .button--quiet:hover:not(:disabled) {
   border-color: var(--oc-line);
-  background: #f6f9f8;
+  background: var(--oc-hover);
 }
 
 .field {
@@ -249,14 +314,26 @@ button {
   box-shadow: var(--oc-shadow-panel);
 }
 
+.panel {
+  overflow: hidden;
+}
+
 .panel__header {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 18px;
-  border-bottom: 1px solid var(--oc-line-soft);
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--oc-line);
+}
+
+.panel__header h2 {
+  font-size: 16px;
+}
+
+.panel__header > .muted {
+  font: 12px var(--font-mono);
 }
 
 .panel__body {
@@ -277,17 +354,23 @@ button {
 
 .facts__label {
   color: var(--oc-muted);
-  font-size: 12.5px;
-  font-weight: 600;
+  font: 500 11px/1.4 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .facts__value {
-  font-size: 15px;
+  margin: 0;
+  color: var(--oc-heading);
+  font-size: 16px;
+  font-weight: 600;
 }
 
 /* ---------------------------------------------------------------- table */
 
 .table-scroll {
+  /* Positioned, so a visually hidden header label stays inside the scroll box instead of widening the page. */
+  position: relative;
   overflow-x: auto;
 }
 
@@ -300,9 +383,11 @@ button {
 .table th {
   padding: 9px 14px;
   border-bottom: 1px solid var(--oc-line);
+  background: var(--oc-surface-2);
   color: var(--oc-muted);
-  font-size: 12.5px;
-  font-weight: 600;
+  font: 500 11px/1.4 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   text-align: left;
   white-space: nowrap;
 }
@@ -318,7 +403,7 @@ button {
 }
 
 .table tbody tr:hover {
-  background: #f7faf9;
+  background: var(--oc-hover);
 }
 
 /* ---------------------------------------------------------------- badge */
@@ -326,12 +411,21 @@ button {
 .badge {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  border-radius: 999px;
-  padding: 2px 9px;
+  gap: 6px;
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-radius: var(--oc-radius-chip);
+  padding: 1px 8px;
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
+}
+
+.badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
 }
 
 .badge[data-tone="success"] {

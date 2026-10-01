@@ -25,7 +25,7 @@ withDefaults(
 .loading__bar {
   height: 16px;
   border-radius: 5px;
-  background: linear-gradient(90deg, var(--oc-line-soft), #f4f8f7, var(--oc-line-soft));
+  background: linear-gradient(90deg, var(--oc-line-soft), var(--oc-hover), var(--oc-line-soft));
 }
 
 .loading__bar:nth-child(even) {

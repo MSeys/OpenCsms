@@ -94,12 +94,13 @@ onMounted(load);
 <template>
   <section data-testid="station-page">
     <PageHeader
+      eyebrow="Charging station"
       :title="station?.name ?? 'Station'"
       description="The sessions this charge point has run, newest first."
       testid="station-title"
     >
       <template #actions>
-        <RouterLink class="button button--quiet" to="/" data-testid="station-back">All stations</RouterLink>
+        <RouterLink class="button" to="/" data-testid="station-back"><span aria-hidden="true">←</span> All stations</RouterLink>
       </template>
     </PageHeader>
 
@@ -185,20 +186,24 @@ onMounted(load);
                 <td data-testid="session-started">{{ formatDateTime(session.startedAtUtc) }}</td>
                 <td data-testid="session-ended">{{ session.endedAtUtc ? formatDateTime(session.endedAtUtc) : "—" }}</td>
                 <td data-testid="session-energy">{{ formatKwh(session.energyKwh) }}</td>
-                <td><StatusBadge :status="session.isOpen ? 'Open' : 'Ended'" testid="session-state" /></td>
                 <td>
-                  <button
-                    v-if="isOperator && session.isOpen"
-                    class="button button--quiet"
-                    type="button"
-                    :disabled="stopBusy"
-                    data-testid="session-stop"
-                    @click="stopSession(session.id)"
-                  >
-                    Stop
-                  </button>
+                  <span class="state">
+                    <StatusBadge :status="session.isOpen ? 'Open' : 'Ended'" testid="session-state" />
+                    <button
+                      v-if="isOperator && session.isOpen"
+                      class="button button--small"
+                      type="button"
+                      :disabled="stopBusy"
+                      data-testid="session-stop"
+                      @click="stopSession(session.id)"
+                    >
+                      Stop
+                    </button>
+                  </span>
+                </td>
+                <td>
                   <RouterLink
-                    v-else-if="invoiceFor(session.id)"
+                    v-if="invoiceFor(session.id)"
                     :to="`/invoices/${invoiceFor(session.id)}`"
                     data-testid="session-invoice"
                   >
@@ -231,6 +236,12 @@ onMounted(load);
 
 .remote {
   margin-top: 18px;
+}
+
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .remote h2 {

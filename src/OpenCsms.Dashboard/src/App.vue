@@ -23,7 +23,7 @@ async function signOut(): Promise<void> {
 
       <div v-if="session.state.user" class="topbar__session">
         <span class="topbar__user" data-testid="session-user">{{ session.state.user.displayName }}</span>
-        <span class="topbar__tenant" data-testid="session-tenant">{{ session.state.user.tenantId }}</span>
+        <span class="topbar__tenant"><span class="topbar__label">tenant</span> <span data-testid="session-tenant">{{ session.state.user.tenantId }}</span></span>
         <span class="badge" data-tone="accent" data-testid="session-role">{{ session.state.user.role }}</span>
         <button class="button button--quiet topbar__signout" type="button" data-testid="sign-out" @click="signOut">
           Sign out
@@ -60,10 +60,15 @@ async function signOut(): Promise<void> {
   align-items: center;
   justify-content: space-between;
   gap: 10px 20px;
-  min-height: 52px;
+  min-height: 54px;
   padding: 8px 22px;
-  background: var(--oc-ink-deep);
-  color: #e7efed;
+  border-bottom: 1px solid var(--oc-bar-line);
+  background-color: var(--oc-bar);
+  background-image:
+    linear-gradient(var(--oc-bar-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--oc-bar-grid) 1px, transparent 1px);
+  background-size: 28px 28px;
+  color: var(--oc-bar-text);
 }
 
 .brand {
@@ -80,7 +85,7 @@ async function signOut(): Promise<void> {
 .brand__mark {
   width: 20px;
   height: 20px;
-  fill: #46c592;
+  fill: var(--oc-mark);
 }
 
 .brand__name {
@@ -91,11 +96,13 @@ async function signOut(): Promise<void> {
 }
 
 .brand__product {
-  border: 1px solid rgb(231 239 237 / 25%);
-  border-radius: 999px;
-  padding: 1px 8px;
-  color: #a9bdb8;
-  font-size: 11.5px;
+  border: 1px solid var(--oc-bar-line);
+  border-radius: var(--oc-radius-chip);
+  padding: 1px 7px;
+  color: var(--oc-bar-muted);
+  font: 500 10.5px/1.5 var(--font-mono);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
 }
 
 .topbar__session {
@@ -105,30 +112,38 @@ async function signOut(): Promise<void> {
 }
 
 .topbar__user {
-  color: #e7efed;
+  color: var(--oc-bar-text);
   font-size: 13.5px;
   font-weight: 600;
 }
 
 .topbar__tenant {
-  color: #a9bdb8;
+  color: var(--oc-bar-muted);
   font-family: var(--font-mono);
   font-size: 12px;
 }
 
+.topbar__label {
+  opacity: 0.7;
+}
+
+.topbar .badge {
+  color: var(--oc-mark);
+}
+
 .topbar__signout {
-  border-color: rgb(231 239 237 / 25%);
+  border-color: var(--oc-bar-line);
   background: transparent;
-  color: #e7efed;
+  color: var(--oc-bar-text);
 }
 
 .topbar__signout:hover:not(:disabled) {
-  border-color: rgb(231 239 237 / 55%);
-  background: rgb(231 239 237 / 8%);
+  border-color: var(--oc-bar-muted);
+  background: rgb(255 255 255 / 6%);
 }
 
 .topbar__signin {
-  color: #e7efed;
+  color: var(--oc-bar-text);
   font-size: 13.5px;
   font-weight: 600;
 }
@@ -159,15 +174,15 @@ async function signOut(): Promise<void> {
 }
 
 .sidenav__link:hover {
-  background: #e6ecea;
+  background: var(--oc-hover);
   color: var(--oc-ink);
   text-decoration: none;
 }
 
 .sidenav__link[aria-current="page"] {
   border-left-color: var(--oc-accent);
-  background: var(--oc-surface);
-  color: var(--oc-ink);
+  background: var(--oc-accent-soft);
+  color: var(--oc-heading);
 }
 
 .content {

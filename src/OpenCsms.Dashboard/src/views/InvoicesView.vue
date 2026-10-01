@@ -50,6 +50,7 @@ onMounted(load);
 <template>
   <section data-testid="invoices-page">
     <PageHeader
+      eyebrow="Billing"
       title="Invoices"
       description="What the billing worker issued for this operator's ended sessions, newest first."
       testid="invoices-title"

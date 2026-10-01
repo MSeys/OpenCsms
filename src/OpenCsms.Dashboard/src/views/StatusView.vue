@@ -29,6 +29,7 @@ onMounted(load);
 <template>
   <section data-testid="status-page">
     <PageHeader
+      eyebrow="Public"
       title="Network status"
       description="The charge points on this network and the last status each connector reported. No account needed."
       testid="status-title"
@@ -64,7 +65,7 @@ onMounted(load);
           <span class="mono muted" data-testid="status-station-charge-point">{{ station.chargePointId }}</span>
         </header>
         <p class="muted status-card__seen" data-testid="status-station-last-seen">
-          Last seen {{ formatDateTime(station.lastSeenAtUtc) }}
+          {{ station.lastSeenAtUtc ? `Last seen ${formatDateTime(station.lastSeenAtUtc)}` : "Not seen yet" }}
         </p>
 
         <ul v-if="station.connectors.length" class="status-card__connectors">

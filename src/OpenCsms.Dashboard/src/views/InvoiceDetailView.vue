@@ -29,12 +29,13 @@ onMounted(load);
 <template>
   <section data-testid="invoice-page">
     <PageHeader
+      eyebrow="Invoice"
       :title="invoice ? formatMoney(invoice.total, invoice.currency) : 'Invoice'"
       description="Energy, the start fee and any idle fee, as the billing worker calculated them."
       testid="invoice-title"
     >
       <template #actions>
-        <RouterLink class="button button--quiet" to="/invoices" data-testid="invoice-back">All invoices</RouterLink>
+        <RouterLink class="button" to="/invoices" data-testid="invoice-back"><span aria-hidden="true">←</span> All invoices</RouterLink>
       </template>
     </PageHeader>
 

@@ -28,6 +28,7 @@ onMounted(load);
 <template>
   <section data-testid="stations-page">
     <PageHeader
+      eyebrow="Network"
       title="Charging stations"
       description="Every charge point this operator owns, and when each was last seen."
       testid="stations-title"
