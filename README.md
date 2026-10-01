@@ -425,16 +425,13 @@ runs locally, so CI proves the modes rather than a CI-shaped path around them:
 Each job builds the dashboard, installs Chromium with its system libraries, and uploads the mode's
 run log from `artifacts/gates/`.
 
-This repository has no remote yet, so no workflow has run on GitHub; the evidence is the local
-rehearsal of each leg. Delete this note when the first hosted run lands. A hosted run restores
-from the committed `NuGet.config`, so it needs ProtoTest 1.1.0 on nuget.org (see [Packages](#packages)).
-The staging smoke has no target yet: a
-dispatch without all five secrets fails with the missing key names before anything starts.
+The staging smoke has no target yet: a dispatch without all five secrets fails with the missing key
+names before anything starts.
 
 ## Packages
 
-This repository consumes ProtoTest packages from nuget.org (see `NuGet.config`); the pins are
-already `1.1.0`. [COVERAGE.md](COVERAGE.md#prototest-integration-matrix)
+This repository consumes ProtoTest packages from nuget.org (see `NuGet.config`) and pins `1.1.0`.
+[COVERAGE.md](COVERAGE.md#prototest-integration-matrix)
 records which of them the suite exercises and the reason recorded for each one the product's shape
 does not justify.
 
