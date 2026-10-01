@@ -4,10 +4,26 @@ OpenCSMS is a small but real **EV charging management system** (CSMS) and the **
 [ProtoTest](https://github.com/MSeys/ProtoTest)**: a real product repository, not a sample inside the
 framework repository.
 
+![The operator dashboard: one charging station, its remote start and its sessions](docs/images/dashboard-station.png)
+
+## Start here
+
+- **See a run without installing anything.** [Open a full OpenCSMS run in the ProtoTrace viewer](https://trace.prototest.dev/?demo=opencsms):
+  API contracts, billing, OCPP charging journeys and the dashboard's browser tests, each with its calls,
+  checks and cleanup.
+- **Read one test.** [`IdleFeeAfterTariffChange`](tests/OpenCsms.Suite/Journeys/IdleFeeAfterTariffChange.cs)
+  charges through a simulated charger, reprices the tariff mid-session, and checks that the invoice
+  bills the prices the session started under.
+- **Run the suite.** With the [prerequisites](#prerequisites) installed:
+
+  ```bash
+  pwsh eng/run-suite.ps1 -Mode container
+  ```
+
 It is deliberately a product, not a demo around a feature: a REST API, PostgreSQL, a billing worker on
-RabbitMQ, a notification worker that pushes invoices and billing failures to external HTTP targets,
-and the tests that prove a charging session becomes an invoice. ProtoTest is the only test
-framework. Framework gaps this app exposes are recorded in the Gap log below.
+RabbitMQ, a notification worker that pushes invoices and billing failures to external HTTP targets, an
+operator dashboard, and the tests that prove a charging session becomes an invoice. ProtoTest is the
+only test framework. Framework gaps this app exposes are recorded in the [Gap log](#gap-log).
 
 ## What this proves
 
