@@ -116,11 +116,21 @@ public sealed class OutboxTests
 
         Assert.That(publisher.Failures, Is.EqualTo(1), "the request's own attempt failed");
 
-        // Wait out the first backoff step and drive the second attempt through the same store; it
-        // fails too and schedules the longer second step.
-        await Task.Delay(TimeSpan.FromSeconds(1.2));
-        await scope.ServiceProvider.GetRequiredService<IOutbox>().DispatchDueAsync();
-        Assert.That(publisher.Failures, Is.EqualTo(2), "the first backed-off retry failed too");
+        // Drive the store until the first backoff step is due; the second attempt fails too and
+        // schedules the longer second step. The step is paced on the machine clock, so the test
+        // polls for it instead of guessing its length.
+        var outbox = scope.ServiceProvider.GetRequiredService<IOutbox>();
+        var retried = await ProtoPolling.PollAsync(
+            async cancellationToken =>
+            {
+                await outbox.DispatchDueAsync(cancellationToken);
+                return publisher.Failures;
+            },
+            failures => failures >= 2,
+            DeliveryTimeout,
+            TimeSpan.FromMilliseconds(100),
+            CancellationToken.None);
+        Assert.That(retried.Value, Is.EqualTo(2), "the first backed-off retry failed too");
 
         // Commit: the failed attempts are the store's own record now, and the next attempt is the
         // run's dispatchers' to make.
