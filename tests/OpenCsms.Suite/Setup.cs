@@ -22,6 +22,7 @@ using ProtoTest.Messaging.RabbitMq;
 using ProtoTest.Messaging.RabbitMq.Testcontainers;
 using ProtoTest.NUnit;
 using ProtoTest.Reporting;
+using ProtoTest.OpenApi;
 using ProtoTest.Rest;
 using ProtoTest.Sheets;
 using ProtoTest.Sql.Testcontainers;
@@ -129,7 +130,9 @@ public sealed class Setup : ProtoTestAssembly
                         .AddProtocol<OcppProtocol>())
                 .AddRest(rest => rest
                     .AddClient(CsmsTargets.Api)
-                    .AddCollector<RestCoverageCollector>()))
+                    .AddCollector<RestCoverageCollector>()
+                    // Coverage against the committed contract names every endpoint no test calls.
+                    .AddCollector<OpenApiCoverageCollector>(Path.Combine(AppContext.BaseDirectory, "opencsms.openapi.json"))))
             .AddHttpReadiness(CsmsTargets.Api, "/healthz")
             // The dashboard application carries the browser. A browser needs a real address, so when
             // neither the environment nor the AppHost configures one the run starts the application
