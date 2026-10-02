@@ -3,11 +3,8 @@
 # command a developer runs locally, `eng/run-suite.ps1 -Mode container`, so CI proves the mode
 # rather than a CI-shaped path around it.
 #
-# Until this repository has a remote, no workflow has run on GitHub; the evidence
-# for the container leg is a local rehearsal of the same command. Delete this note when the first
-# hosted run lands. A hosted run restores from the committed NuGet.config, so it additionally needs
-# ProtoTest 1.1.0 on nuget.org (README, "Packages"); until then only a checkout with the gitignored
-# NuGet.local.config restores, and nuget.org carries 1.0.x only.
+# After the suite, the ProtoTest Evidence action compares the run with main's last green run and
+# comments on the pull request: the tests the change broke or fixed, and new code no test covers.
 
 name: CI
 
@@ -19,6 +16,8 @@ on:
 
 permissions:
   contents: read
+  actions: read        # the action downloads main's last green trace
+  pull-requests: write # the action comments on the pull request
 
 jobs:
   container:
@@ -32,9 +31,8 @@ jobs:
       # net8.0 is every project's target. The 10.0.x SDK is the line the mode legs were rehearsed
       # with: Aspire 13.5.4 resolves DCP's runtime identifier through the SDK's own pick-best-RID
       # path at 10.0.100 and later, and only falls back to its net8.0 tool below that. There is
-      # deliberately no NuGet package cache in this job: the branch's ProtoTest packages keep
-      # their 1.1.0-alpha.1 version while their content changes with every repack, so a cached
-      # global packages folder can serve a stale feed.
+      # deliberately no NuGet package cache in this job: a maintainer's local feed can repack
+      # ProtoTest under the same version, and a cached global packages folder would serve it stale.
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
@@ -64,6 +62,13 @@ jobs:
       - name: Run the suite in container mode
         shell: pwsh
         run: ./eng/run-suite.ps1 -Mode container
+
+      # Main's runs keep the trace each pull request compares with; a pull request gets the comment.
+      - name: ProtoTest evidence
+        if: always()
+        uses: MSeys/prototest-action@v1.0.0
+        with:
+          trace: tests/OpenCsms.Suite/bin/Release/net8.0/TestResults/OpenCsms/opencsms.prototrace
 
       # The run script tees the suite's output to artifacts/gates/opencsms-container-<timestamp>.log;
       # the artifact keeps it when the job fails, which is when the evidence matters most.
