@@ -134,8 +134,8 @@ public sealed class Setup : ProtoTestAssembly
                     .AddCollector<RestCoverageCollector>()
                     // The response fields that arrived but that no shape assertion checked.
                     .AddCollector<RestTrafficCoverageCollector>()
-                    // Coverage against the committed contract names every endpoint no test calls.
-                    .AddCollector<OpenApiCoverageCollector>(Path.Combine(AppContext.BaseDirectory, "opencsms.openapi.json"))))
+                    // Coverage against the contract the API serves names every endpoint no test calls.
+                    .AddCollector<OpenApiCoverageCollector>("/swagger/v1/swagger.json")))
             .AddHttpReadiness(CsmsTargets.Api, "/healthz")
             // The dashboard application carries the browser. A browser needs a real address, so when
             // neither the environment nor the AppHost configures one the run starts the application
