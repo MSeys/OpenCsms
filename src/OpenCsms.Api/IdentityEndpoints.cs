@@ -19,12 +19,15 @@ internal static class IdentityEndpoints
     public static void MapIdentityEndpoints(this IEndpointRouteBuilder api, IEndpointRouteBuilder machine)
     {
         var auth = api.MapGroup("/auth").WithTags("Auth");
-        auth.MapPost("/sign-in", SignInAsync);
+        auth.MapPost("/sign-in", SignInAsync)
+            .Produces<UserSessionResponse>(StatusCodes.Status200OK);
         auth.MapPost("/sign-out", SignOutAsync);
-        auth.MapGet("/session", GetSession).RequireAuthorization(CsmsPolicies.TenantUser);
+        auth.MapGet("/session", GetSession).RequireAuthorization(CsmsPolicies.TenantUser)
+            .Produces<UserSessionResponse>(StatusCodes.Status200OK);
         auth.MapGet("/xsrf", GetAntiforgeryToken).RequireAuthorization(CsmsPolicies.TenantUser);
 
-        machine.MapPost("/users", CreateUserAsync).WithTags("Users");
+        machine.MapPost("/users", CreateUserAsync).WithTags("Users")
+            .Produces<UserResponse>(StatusCodes.Status201Created);
     }
 
     private static async Task<IResult> SignInAsync(

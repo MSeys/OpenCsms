@@ -2,6 +2,7 @@ namespace OpenCsms.Suite;
 
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using OpenCsms.Api;
 using OpenCsms.AppHost;
 using OpenCsms.Contracts;
@@ -131,6 +132,8 @@ public sealed class Setup : ProtoTestAssembly
                 .AddRest(rest => rest
                     .AddClient(CsmsTargets.Api)
                     .AddCollector<RestCoverageCollector>()
+                    // The response fields that arrived but that no shape assertion checked.
+                    .AddCollector<RestTrafficCoverageCollector>()
                     // Coverage against the committed contract names every endpoint no test calls.
                     .AddCollector<OpenApiCoverageCollector>(Path.Combine(AppContext.BaseDirectory, "opencsms.openapi.json"))))
             .AddHttpReadiness(CsmsTargets.Api, "/healthz")
@@ -170,6 +173,10 @@ public sealed class Setup : ProtoTestAssembly
             {
                 sink.OutputPath = Path.Combine("TestResults", "OpenCsms", "report.html");
                 sink.Title = "OpenCSMS · ProtoTest Reference Suite";
-            });
+            })
+            // Every OCPP message kind the protocol knows that no test expected, per charge-point client.
+            .ConfigureServices(services => services
+                .AddSingleton<IProtoCollector>(new DeviceCoverageCollector(CsmsTargets.Chargers, [new OcppProtocol()]))
+                .AddSingleton<IProtoCollector>(new DeviceCoverageCollector(CsmsTargets.DashboardChargers, [new OcppProtocol()])));
     }
 }

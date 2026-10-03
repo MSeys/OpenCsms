@@ -12,7 +12,8 @@ using OpenCsms.Contracts;
 internal static class TenantEndpoints
 {
     public static void MapTenantEndpoints(this IEndpointRouteBuilder api)
-        => api.MapPost("/tenants", RegisterAsync).WithTags("Tenants");
+        => api.MapPost("/tenants", RegisterAsync).WithTags("Tenants")
+            .Produces<TenantRegistrationResponse>(StatusCodes.Status201Created);
 
     private static async Task<IResult> RegisterAsync(
         RegisterTenantRequest request,

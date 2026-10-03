@@ -112,7 +112,8 @@ public sealed class Program
             {
                 return Problem(exception);
             }
-        });
+        })
+            .Produces<TariffResponse>(StatusCodes.Status201Created);
 
         machine.MapGet("/tariffs", async (
             ClaimsPrincipal user,
@@ -120,7 +121,8 @@ public sealed class Program
             CancellationToken cancellationToken) =>
             Results.Ok((await tariffs.ListAsync(
                 CsmsTenantClaims.TenantId(user),
-                cancellationToken)).Select(ApiMappings.ToTariffResponse)));
+                cancellationToken)).Select(ApiMappings.ToTariffResponse)))
+            .Produces<IEnumerable<TariffResponse>>(StatusCodes.Status200OK);
 
         machine.MapPost("/stations", async (
             RegisterStationRequest request,
@@ -160,7 +162,8 @@ public sealed class Program
                 }),
                 _ => throw new InvalidOperationException("Unhandled station registration outcome.")
             };
-        });
+        })
+            .Produces<StationResponse>(StatusCodes.Status201Created);
 
         machine.MapGet("/stations/{id:guid}", async (
             Guid id,
@@ -169,7 +172,8 @@ public sealed class Program
             CancellationToken cancellationToken) =>
             await stations.FindForTenantAsync(id, CsmsTenantClaims.TenantId(user), cancellationToken) is { } station
                 ? Results.Ok(ApiMappings.ToStationResponse(station))
-                : Results.NotFound(new { message = $"No station '{id}'." }));
+                : Results.NotFound(new { message = $"No station '{id}'." }))
+            .Produces<StationResponse>(StatusCodes.Status200OK);
 
         machine.MapGet("/stations/{id:guid}/connectors", async (
             Guid id,
@@ -185,7 +189,8 @@ public sealed class Program
 
             var rows = await connectors.ListByStationAsync(id, cancellationToken);
             return Results.Ok(rows.Select(ApiMappings.ToConnectorResponse));
-        });
+        })
+            .Produces<IEnumerable<ConnectorResponse>>(StatusCodes.Status200OK);
 
         machine.MapGet("/stations/{id:guid}/sessions", async (
             Guid id,
@@ -201,7 +206,8 @@ public sealed class Program
 
             var rows = await sessions.ListByStationAsync(id, cancellationToken);
             return Results.Ok(rows.Select(ApiMappings.ToSessionResponse));
-        });
+        })
+            .Produces<IEnumerable<SessionResponse>>(StatusCodes.Status200OK);
 
         machine.MapPost("/sessions", async (
             StartSessionRequest request,
@@ -234,7 +240,8 @@ public sealed class Program
                 }),
                 _ => throw new InvalidOperationException("Unhandled session start outcome.")
             };
-        });
+        })
+            .Produces<SessionResponse>(StatusCodes.Status201Created);
 
         machine.MapGet("/sessions/{id:guid}", async (
             Guid id,
@@ -250,7 +257,8 @@ public sealed class Program
             return await sessions.FindAsync(id, cancellationToken) is { } session
                 ? Results.Ok(ApiMappings.ToSessionResponse(session))
                 : Results.NotFound(new { message = $"No session '{id}'." });
-        });
+        })
+            .Produces<SessionResponse>(StatusCodes.Status200OK);
 
         machine.MapPost("/sessions/{id:guid}/meter-values", async (
             Guid id,
@@ -279,7 +287,8 @@ public sealed class Program
             {
                 return Results.Conflict(new { message = exception.Message });
             }
-        });
+        })
+            .Produces<SessionResponse>(StatusCodes.Status200OK);
 
         machine.MapPost("/sessions/{id:guid}/end", async (
             Guid id,
@@ -314,7 +323,8 @@ public sealed class Program
             }
 
             return Results.Ok(ApiMappings.ToSessionResponse(session));
-        });
+        })
+            .Produces<SessionResponse>(StatusCodes.Status200OK);
 
         machine.MapPost("/stations/{id:guid}/remote-start", async (
             Guid id,
@@ -334,7 +344,8 @@ public sealed class Program
                 request.IdTag,
                 request.ConnectorId,
                 cancellationToken));
-        });
+        })
+            .Produces<RemoteCommandResponse>(StatusCodes.Status200OK);
 
         machine.MapPost("/sessions/{id:guid}/remote-stop", async (
             Guid id,
@@ -349,7 +360,8 @@ public sealed class Program
             }
 
             return RemoteCommandResults.Map(await commands.RemoteStopAsync(id, cancellationToken));
-        });
+        })
+            .Produces<RemoteCommandResponse>(StatusCodes.Status200OK);
 
         machine.MapGet("/sessions/{id:guid}/invoice", async (
             Guid id,
@@ -366,7 +378,8 @@ public sealed class Program
             return await invoices.FindBySessionAsync(id, cancellationToken) is { } invoice
                 ? Results.Ok(ApiMappings.ToInvoiceResponse(invoice))
                 : Results.NotFound(new { message = $"Session '{id}' has no invoice yet." });
-        });
+        })
+            .Produces<InvoiceResponse>(StatusCodes.Status200OK);
 
         machine.MapGet("/invoices/{id:guid}", async (
             Guid id,
@@ -375,7 +388,8 @@ public sealed class Program
             CancellationToken cancellationToken) =>
             await invoices.FindForTenantAsync(id, CsmsTenantClaims.TenantId(user), cancellationToken) is { } invoice
                 ? Results.Ok(ApiMappings.ToInvoiceResponse(invoice))
-                : Results.NotFound(new { message = $"No invoice '{id}'." }));
+                : Results.NotFound(new { message = $"No invoice '{id}'." }))
+            .Produces<InvoiceResponse>(StatusCodes.Status200OK);
 
         // The only cookie-authenticated route on the machine surface: the file is tenant-scoped,
         // so the tenant comes from the session claim, never from the request.

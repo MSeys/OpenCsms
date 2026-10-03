@@ -23,24 +23,34 @@ internal static class DashboardEndpoints
             .WithTags("Dashboard")
             .RequireAuthorization(CsmsPolicies.TenantUser);
 
-        dashboard.MapGet("/stations", ListStationsAsync);
-        dashboard.MapGet("/stations/{id:guid}", GetStationAsync);
-        dashboard.MapGet("/stations/{id:guid}/sessions", ListStationSessionsAsync);
-        dashboard.MapGet("/invoices", ListInvoicesAsync);
-        dashboard.MapGet("/invoices/{id:guid}", GetInvoiceAsync);
-        dashboard.MapGet("/tariffs", ListTariffsAsync);
+        dashboard.MapGet("/stations", ListStationsAsync)
+            .Produces<IEnumerable<DashboardStationResponse>>(StatusCodes.Status200OK);
+        dashboard.MapGet("/stations/{id:guid}", GetStationAsync)
+            .Produces<DashboardStationResponse>(StatusCodes.Status200OK);
+        dashboard.MapGet("/stations/{id:guid}/sessions", ListStationSessionsAsync)
+            .Produces<IEnumerable<SessionResponse>>(StatusCodes.Status200OK);
+        dashboard.MapGet("/invoices", ListInvoicesAsync)
+            .Produces<IEnumerable<InvoiceResponse>>(StatusCodes.Status200OK);
+        dashboard.MapGet("/invoices/{id:guid}", GetInvoiceAsync)
+            .Produces<InvoiceResponse>(StatusCodes.Status200OK);
+        dashboard.MapGet("/tariffs", ListTariffsAsync)
+            .Produces<IEnumerable<TariffResponse>>(StatusCodes.Status200OK);
 
         dashboard.MapPost("/stations/{id:guid}/remote-start", RemoteStartAsync)
             .RequireAuthorization(CsmsPolicies.Operator)
-            .AddEndpointFilter<ValidateAntiforgeryFilter>();
+            .AddEndpointFilter<ValidateAntiforgeryFilter>()
+            .Produces<RemoteCommandResponse>(StatusCodes.Status200OK);
         dashboard.MapPost("/sessions/{id:guid}/remote-stop", RemoteStopAsync)
             .RequireAuthorization(CsmsPolicies.Operator)
-            .AddEndpointFilter<ValidateAntiforgeryFilter>();
+            .AddEndpointFilter<ValidateAntiforgeryFilter>()
+            .Produces<RemoteCommandResponse>(StatusCodes.Status200OK);
         dashboard.MapPut("/tariffs/{id:guid}", UpdateTariffAsync)
             .RequireAuthorization(CsmsPolicies.Operator)
-            .AddEndpointFilter<ValidateAntiforgeryFilter>();
+            .AddEndpointFilter<ValidateAntiforgeryFilter>()
+            .Produces<TariffResponse>(StatusCodes.Status200OK);
 
-        app.MapGet("/api/status/stations", ListPublicStationsAsync).WithTags("Status").AllowAnonymous();
+        app.MapGet("/api/status/stations", ListPublicStationsAsync).WithTags("Status").AllowAnonymous()
+            .Produces<IEnumerable<PublicStatusStationResponse>>(StatusCodes.Status200OK);
     }
 
     private static async Task<IResult> ListStationsAsync(
