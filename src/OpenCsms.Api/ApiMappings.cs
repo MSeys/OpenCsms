@@ -49,7 +49,7 @@ internal static class ApiMappings
             session.IsOpen);
 
     public static RemoteCommandResponse ToRemoteCommandResponse(AuthorizationStatus status)
-        => new(status.ToString());
+        => new(status.ToString().ToUpperInvariant());
 
     public static InvoiceResponse ToInvoiceResponse(Invoice invoice)
         => new(

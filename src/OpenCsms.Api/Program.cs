@@ -175,6 +175,15 @@ public sealed class Program
                 : Results.NotFound(new { message = $"No station '{id}'." }))
             .Produces<StationResponse>(StatusCodes.Status200OK);
 
+        machine.MapGet("/stations/{id:guid}/summary", async (
+            Guid id,
+            ClaimsPrincipal user,
+            StationReads stations,
+            CancellationToken cancellationToken) =>
+            await stations.FindForTenantAsync(id, CsmsTenantClaims.TenantId(user), cancellationToken) is { } station
+                ? Results.Ok(new { station.Id, station.Name, station.ConnectorCount, station.LastSeenAtUtc })
+                : Results.NotFound(new { message = $"No station '{id}'." }));
+
         machine.MapGet("/stations/{id:guid}/connectors", async (
             Guid id,
             ClaimsPrincipal user,
